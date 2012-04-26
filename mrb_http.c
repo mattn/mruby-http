@@ -97,7 +97,7 @@ hex_decode(const char ch)
 }
 
 static char*
-url_decode(const char* s, size_t len)
+url_decode(mrb_state *mrb, const char* s, size_t len)
 {
   char* dbuf, * d;
   size_t i;
@@ -108,16 +108,15 @@ url_decode(const char* s, size_t len)
   return (char*)s;
   
 NEEDS_DECODE:
-  dbuf = (char*) malloc(len - 1);
+  dbuf = (char*) mrb_malloc(mrb, len - 1);
   memcpy(dbuf, s, i);
   d = dbuf + i;
   while (i < len) {
     if (s[i] == '%') {
       int hi, lo;
-      if ((hi = hex_decode(s[i + 1])) == -1
-	  || (lo = hex_decode(s[i + 2])) == -1) {
-        free(dbuf);
-    	return NULL;
+      if ((hi = hex_decode(s[i + 1])) == -1 || (lo = hex_decode(s[i + 2])) == -1) {
+        mrb_free(mrb, dbuf);
+        return NULL;
       }
       *d++ = hi * 16 + lo;
       i += 3;
@@ -131,7 +130,7 @@ NEEDS_DECODE:
 static int
 store_url_decoded(mrb_state *mrb, mrb_value hash, const char* key, size_t key_len, const char* value, size_t value_len)
 {
-  char* decoded = url_decode(value, value_len);
+  char* decoded = url_decode(mrb, value, value_len);
   if (decoded == NULL) {
     return -1;
   }
@@ -140,7 +139,7 @@ store_url_decoded(mrb_state *mrb, mrb_value hash, const char* key, size_t key_le
     hash_str_set(mrb, hash, key, key_len, value, value_len);
   } else {
     hash_str_set(mrb, hash, key, key_len, decoded, -1);
-    free(decoded);
+    mrb_free(mrb, decoded);
   }
   return 0;
 }
@@ -197,7 +196,7 @@ mrb_http_parse_http_request(mrb_state *mrb, mrb_value self)
   if (ret < 0) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
-  hash = mrb_hash_new(mrb, 50);
+  hash = mrb_hash_new(mrb, 32);
 
   hash_str_set(mrb, hash, "REQUEST_METHOD", -1, method, method_len);
   hash_str_set(mrb, hash, "REQUEST_URI", -1, path, path_len);
@@ -290,7 +289,7 @@ mrb_http_parse_http_response(mrb_state *mrb, mrb_value self)
     &num_headers,
     last_len);
 
-  char name[MAX_HEADER_NAME_LEN]; // temp buffer for normalized names
+  char name[MAX_HEADER_NAME_LEN]; /* temp buffer for normalized names */
   mrb_value last_element_value_sv = mrb_nil_value();
   size_t i;
   hash = mrb_hash_new(mrb, 20);
@@ -298,7 +297,7 @@ mrb_http_parse_http_response(mrb_state *mrb, mrb_value self)
     struct phr_header const h = headers[i];
     if (h.name != NULL) {
       if(h.name_len > sizeof(name)) {
-        // skip if name_len is too long
+        /* skip if name_len is too long */
         continue;
       }
       normalize_response_header_name(name, h.name, h.name_len);
