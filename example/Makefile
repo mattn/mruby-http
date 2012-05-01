@@ -1,11 +1,10 @@
 MRUBY_ROOT = ../..
-TARGET := $(MRUBY_ROOT)/lib/ritevm
 ifeq ($(OS),Windows_NT)
-MRUBY_LIB := $(TARGET).lib
-LIB = $(MRUBY_LIB)
+MRUBY_LIB := $(MRUBY_ROOT)/mrblib/mrblib.o $(MRUBY_ROOT)/lib/ritevm.lib
+LDFLAGS = $(MRUBY_LIB) ../libmrb_http.a
 else
-MRUBY_LIB := $(TARGET).a
-LIB = $(MRUBY_LIB)
+MRUBY_LIB := $(MRUBY_ROOT)/mrblib/mrblib.o $(MRUBY_ROOT)/lib/ritevm.a
+LDFLAGS = $(MRUBY_LIB) ../libmrb_http.a
 endif
 
 INCLUDES = -I$(MRUBY_ROOT)/include -I$(MRUBY_ROOT)/src -I..
@@ -15,11 +14,13 @@ CC = gcc
 LL = gcc
 AR = ar
 
-all : main
+PROGS = runner
+
+all : $(PROGS)
 	@echo done
 
-main : main.c
-	gcc $(CFLAGS) -o main main.c ../libmrb_http.a $(LIB)
+runner : runner.c
+	gcc $(CFLAGS) -o runner runner.c $(LDFLAGS)
 
 clean :
-	rm -f *.o main
+	rm -f *.o $(PROGS)

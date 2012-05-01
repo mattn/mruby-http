@@ -1,270 +1,159 @@
 #include <mruby.h>
+#include <mruby/proc.h>
+#include <mruby/data.h>
 #include <mruby/string.h>
 #include <mruby/hash.h>
 #include <mruby/array.h>
-#include "picohttpparser.h"
-#include <string.h>
+#include <mruby/class.h>
+#include <mruby/variable.h>
+#include <http_parser.h>
 #include <stdio.h>
+#include <string.h>
 
 #define MAX_HEADER_NAME_LEN 1024
 #define MAX_HEADERS         128
 
 static struct RClass *_class_http;
+static struct RClass *_class_http_parser;
 
 /*********************************************************
  * main
  *********************************************************/
 
-static void
-hash_str_set(mrb_state *mrb, mrb_value hash, const char* key, size_t key_len, const char* value, size_t value_len)
-{
-  if (key_len == -1) key_len = strlen(key);
-  if (value_len == -1) value_len = strlen(value);
-  mrb_hash_set(mrb, hash, mrb_str_new(mrb, key, key_len), mrb_str_new(mrb, value, value_len));
-}
-
-static mrb_value
-hash_str_get(mrb_state *mrb, mrb_value hash, const char* key, size_t key_len)
-{
-  if (key_len == -1) key_len = strlen(key);
-  return mrb_hash_get(mrb, hash, mrb_str_new(mrb, key, key_len));
-}
+typedef struct {
+  mrb_state *mrb;
+  struct http_parser parser;
+  struct http_parser_url handle;
+  struct http_parser_settings settings;
+  int was_header_value;
+  mrb_value headers;
+  mrb_value last_header_field;
+  mrb_value last_header_value;
+} http_parser_context;
 
 static void
-str_concat(mrb_state *mrb, mrb_value str, const char* add, size_t add_len)
+http_parser_context_free(mrb_state *mrb, void *p)
 {
-  if (add_len == -1) add_len = strlen(add);
-  mrb_str_concat(mrb, str, mrb_str_new(mrb, add, add_len));
+  free(p);
 }
+
+static const struct mrb_data_type http_parser_context_type = {
+  "http_parser_context", http_parser_context_free,
+};
+
 
 static int
-hash_has_keys(mrb_state *mrb, mrb_value hash, const char* key, size_t key_len)
+parser_settings_on_url(http_parser* parser, const char *at, size_t len)
 {
-  return !mrb_nil_p(hash_str_get(mrb, hash, key, key_len));
-}
+  http_parser_context *context = (http_parser_context*) parser->data;
+  mrb_state* mrb = context->mrb;
 
-static char
-tou(char ch)
-{
-  if ('a' <= ch && ch <= 'z')
-    ch -= 'a' - 'A';
-  return ch;
-}
-
-static char
-tol(char const ch)
-{
-  return ('A' <= ch && ch <= 'Z')
-    ? ch - ('A' - 'a')
-    : ch;
-}
-
-static int
-header_is(const struct phr_header* header, const char* name, size_t len)
-{
-  const char* x, * y;
-  if (header->name_len != len)
-    return 0;
-  for (x = header->name, y = name; len != 0; --len, ++x, ++y)
-    if (tou(*x) != *y)
-      return 0;
-  return 1;
-}
-
-static size_t
-find_ch(const char* s, size_t len, char ch)
-{
-  size_t i;
-  for (i = 0; i != len; ++i, ++s)
-    if (*s == ch)
-      break;
-  return i;
-}
-
-static int
-hex_decode(const char ch)
-{
-  int r;
-  if ('0' <= ch && ch <= '9')
-    r = ch - '0';
-  else if ('A' <= ch && ch <= 'F')
-    r = ch - 'A' + 0xa;
-  else if ('a' <= ch && ch <= 'f')
-    r = ch - 'a' + 0xa;
-  else
-    r = -1;
-  return r;
-}
-
-static char*
-url_decode(mrb_state *mrb, const char* s, size_t len)
-{
-  char* dbuf, * d;
-  size_t i;
-  
-  for (i = 0; i < len; ++i)
-    if (s[i] == '%')
-      goto NEEDS_DECODE;
-  return (char*)s;
-  
-NEEDS_DECODE:
-  dbuf = (char*) mrb_malloc(mrb, len - 1);
-  memcpy(dbuf, s, i);
-  d = dbuf + i;
-  while (i < len) {
-    if (s[i] == '%') {
-      int hi, lo;
-      if ((hi = hex_decode(s[i + 1])) == -1 || (lo = hex_decode(s[i + 2])) == -1) {
-        mrb_free(mrb, dbuf);
-        return NULL;
-      }
-      *d++ = hi * 16 + lo;
-      i += 3;
-    } else
-      *d++ = s[i++];
-  }
-  *d = '\0';
-  return dbuf;
-}
-
-static int
-store_url_decoded(mrb_state *mrb, mrb_value hash, const char* key, size_t key_len, const char* value, size_t value_len)
-{
-  char* decoded = url_decode(mrb, value, value_len);
-  if (decoded == NULL) {
-    return -1;
-  }
-
-  if (decoded == value) {
-    hash_str_set(mrb, hash, key, key_len, value, value_len);
-  } else {
-    hash_str_set(mrb, hash, key, key_len, decoded, -1);
-    mrb_free(mrb, decoded);
+  if(http_parser_parse_url(at, len, FALSE, &(context->handle)) != 0) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   return 0;
 }
 
-static void
-normalize_response_header_name(char* const dest, const char* const src, size_t const len)
+static int
+parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
 {
-  size_t i;
-  for(i = 0; i < len; i++) {
-    dest[i] = tol(src[i]);
-  }
-}
+  http_parser_context *context = (http_parser_context*) parser->data;
+  mrb_state* mrb = context->mrb;
 
-static void
-concat_multiline_header(mrb_state *mrb, mrb_value v, const char *cont, size_t cont_len)
-{
-  str_concat(mrb, v, "\n", -1);
-  str_concat(mrb, v, cont, cont_len);
-}
-
-static mrb_value
-mrb_http_parse_http_request(mrb_state *mrb, mrb_value self)
-{
-  mrb_value last_value;
-  const char* method = NULL;
-  size_t method_len = 0;
-  const char* path = NULL;
-  size_t path_len = 0;
-  int minor_version = 0;
-  struct phr_header headers[MAX_HEADERS];
-  size_t num_headers = MAX_HEADERS;
-  char tmp[MAX_HEADER_NAME_LEN + sizeof("HTTP_") - 1] = {0};
-  size_t question_at = 0;
-  mrb_value arg, hash;
-  size_t i;
-
-  mrb_get_args(mrb, "o", &arg);
-  if (mrb_nil_p(arg) || mrb_type(arg) != MRB_TT_STRING) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-
-  int ret = phr_parse_request(
-    RSTRING_PTR(arg),
-    RSTRING_LEN(arg),
-    &method,
-    &method_len,
-    &path,
-    &path_len,
-    &minor_version,
-    headers,
-    &num_headers,
-    0
-  );
-  if (ret < 0) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  hash = mrb_hash_new(mrb, 32);
-
-  hash_str_set(mrb, hash, "REQUEST_METHOD", -1, method, method_len);
-  hash_str_set(mrb, hash, "REQUEST_URI", -1, path, path_len);
-  hash_str_set(mrb, hash, "SCRIPT_NAME", -1, "", 0);
-
-  path_len = find_ch(path, path_len, '#'); /* strip off all text after # after storing request_uri */
-  question_at = find_ch(path, path_len, '?');
-
-  if (store_url_decoded(mrb, hash, "PATH_INFO", sizeof("PATH_INFO") - 1, path, question_at) != 0) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (question_at != path_len) {
-    ++question_at;
-  }
-
-  hash_str_set(mrb, hash, "QUERY_STRING", -1, path+question_at, path_len - question_at);
-  sprintf(tmp, "HTTP/1.%d", minor_version);
-  hash_str_set(mrb, hash, "SERVER_PROTOCOL", -1, tmp, -1);
-
-  for (i = 0; i < num_headers; ++i) {
-    if (headers[i].name != NULL) {
-      const char* name;
-      size_t name_len;
-      if (header_is(headers + i, "CONTENT-TYPE", sizeof("CONTENT-TYPE") - 1)) {
-        name = "CONTENT_TYPE";
-        name_len = sizeof("CONTENT_TYPE") - 1;
-      } else if (header_is(headers + i, "CONTENT-LENGTH",
-          sizeof("CONTENT-LENGTH") - 1)) {
-        name = "CONTENT_LENGTH";
-        name_len = sizeof("CONTENT_LENGTH") - 1;
-      } else {
-        const char* s;
-        char* d;
-        size_t n;
-        if (sizeof(tmp) - 5 < headers[i].name_len) {
-           return mrb_nil_value();
-        }
-        strcpy(tmp, "HTTP_");
-        for (s = headers[i].name, n = headers[i].name_len, d = tmp + 5;
-          n != 0;
-          s++, --n, d++) {
-          *d = *s == '-' ? '_' : tou(*s);
-        }
-        name = tmp;
-        name_len = headers[i].name_len + 5;
-      }
-
-      if (hash_has_keys(mrb, hash, name, name_len)) {
-        mrb_value v = hash_str_get(mrb, hash, name, name_len);
-        str_concat(mrb, v, ", ", -1);
-        str_concat(mrb, v, headers[i].value, headers[i].value_len);
-        last_value = v;
-      } else {
-        hash_str_set(mrb, hash, name, name_len, headers[i].value, headers[i].value_len);
-        last_value = mrb_str_new(mrb, headers[i].value, headers[i].value_len);
-      }
-    } else {
-      /* continuing lines of a mulitiline header */
-      str_concat(mrb, last_value, headers[i].value, headers[i].value_len);
+  if (context->was_header_value) {
+    if (!mrb_nil_p(context->last_header_field)) {
+      mrb_str_concat(mrb, context->last_header_field, context->last_header_value);
+      context->last_header_value = mrb_nil_value();
     }
+    context->last_header_field = mrb_str_new(mrb, at, len);
+    context->was_header_value = FALSE;
+  } else {
+    mrb_str_concat(mrb, context->last_header_field, mrb_str_new(mrb, at, len));
   }
+  return 0;
+}
 
-  return hash;
+static int
+parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
+{
+  http_parser_context *context = (http_parser_context*) parser->data;
+  mrb_state* mrb = context->mrb;
+
+  if(!context->was_header_value) {
+    context->last_header_value = mrb_str_new(mrb, at, len);
+    context->was_header_value = TRUE;
+  } else {
+    mrb_str_concat(mrb, context->last_header_value, mrb_str_new(mrb, at, len));
+  }
+  return 0;
+}
+
+static int
+parser_settings_on_headers_complete(http_parser* parser)
+{
+  http_parser_context *context = (http_parser_context*) parser->data;
+  mrb_state* mrb = context->mrb;
+
+  if(!mrb_nil_p(context->last_header_field)) {
+    mrb_hash_set(mrb, context->headers, context->last_header_field, context->last_header_value);
+  }
+  return 1;
+}
+
+static int
+parser_settings_on_message_complete(http_parser* parser)
+{
+  return 0;
 }
 
 static mrb_value
-mrb_http_parse_http_response(mrb_state *mrb, mrb_value self)
+mrb_http_parser_init(mrb_state *mrb, mrb_value self)
 {
+  http_parser_context* context = NULL;
+
+  context = (http_parser_context*) mrb_malloc(mrb, sizeof(http_parser_context));
+  memset(context, 0, sizeof(http_parser_context));
+  context->mrb = mrb;
+  mrb_iv_set(mrb, self, mrb_intern(mrb, "data"), mrb_obj_value(
+    Data_Wrap_Struct(mrb, mrb->object_class,
+    &http_parser_context_type, (void*) context)));
+  return self;
+}
+
+static mrb_value
+mrb_http_parser_parse(mrb_state *mrb, mrb_value self)
+{
+  mrb_value value_context;
+  http_parser_context* context;
+  struct RProc *b = NULL;
+
+  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "data"));
+  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  if (!context) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
+  }
+
+  mrb_get_args(mrb, "b", &b);
+
+  context->parser.data = context;
+  context->was_header_value = TRUE;
+  context->headers = mrb_hash_new(mrb, 32);
+
+  http_parser_init(&context->parser, HTTP_REQUEST);
+
+  context->settings.on_url = parser_settings_on_url;
+  context->settings.on_header_field = parser_settings_on_header_field;
+  context->settings.on_header_value = parser_settings_on_header_value;
+  context->settings.on_headers_complete = parser_settings_on_headers_complete;
+  context->settings.on_message_complete = parser_settings_on_message_complete;
+
+  return mrb_nil_value();
+}
+
+static mrb_value
+mrb_http_parse_response(mrb_state *mrb, mrb_value self)
+{
+#if 0
   int minor_version, status;
   const char* msg;
   size_t msg_len;
@@ -317,6 +206,8 @@ mrb_http_parse_http_response(mrb_state *mrb, mrb_value self)
   mrb_ary_push(mrb, arr, mrb_str_new(mrb, msg, msg_len));
   mrb_ary_push(mrb, arr, hash);
   return arr;
+#endif
+  return mrb_nil_value();
 }
 
 /*********************************************************
@@ -326,8 +217,10 @@ mrb_http_parse_http_response(mrb_state *mrb, mrb_value self)
 void
 mrb_http_init(mrb_state* mrb) {
   _class_http = mrb_define_module(mrb, "HTTP");
-  mrb_define_class_method(mrb, _class_http, "parse_http_request", mrb_http_parse_http_request, ARGS_REQ(1));
-  mrb_define_class_method(mrb, _class_http, "parse_http_response", mrb_http_parse_http_response, ARGS_REQ(1));
+
+  _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
+  mrb_define_method(mrb, _class_http_parser, "initialize", mrb_http_parser_init, ARGS_OPT(1));
+  mrb_define_class_method(mrb, _class_http_parser, "parse", mrb_http_parser_parse, ARGS_REQ(1));
 }
 
 /* vim:set et ts=2 sts=2 sw=2 tw=0: */
