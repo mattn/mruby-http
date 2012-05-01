@@ -1,13 +1,13 @@
 MRUBY_ROOT = ../..
 ifeq ($(OS),Windows_NT)
 MRUBY_LIB := $(MRUBY_ROOT)/mrblib/mrblib.o $(MRUBY_ROOT)/lib/ritevm.lib
-LDFLAGS = $(MRUBY_LIB) ../libmrb_http.a
+LDFLAGS = $(MRUBY_LIB) ../libmrb_http.a ../../mruby-uv/libmrb_uv.a -luv
 else
 MRUBY_LIB := $(MRUBY_ROOT)/mrblib/mrblib.o $(MRUBY_ROOT)/lib/ritevm.a
-LDFLAGS = $(MRUBY_LIB) ../libmrb_http.a
+LDFLAGS = $(MRUBY_LIB) ../libmrb_http.a ../../mruby-uv/libmrb_uv.a -luv -lpthread -ldl -lrt -lm
 endif
 
-INCLUDES = -I$(MRUBY_ROOT)/include -I$(MRUBY_ROOT)/src -I..
+INCLUDES = -I$(MRUBY_ROOT)/include -I$(MRUBY_ROOT)/src -I.. -I../../mruby-uv
 CFLAGS = $(INCLUDES) -O3 -g -Wall -Werror-implicit-function-declaration
 
 CC = gcc
