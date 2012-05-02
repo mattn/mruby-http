@@ -28,17 +28,13 @@ typedef struct {
   struct http_parser_url handle;
   struct http_parser_settings settings;
   int was_header_value;
-  mrb_value headers;
-  mrb_value last_header_field;
-  mrb_value last_header_value;
   mrb_value instance; /* callback */
-  mrb_value buf;
 } mrb_http_parser_context;
 
 static void
 http_parser_context_free(mrb_state *mrb, void *p)
 {
-  free(p);
+  mrb_free(mrb, p);
 }
 
 static const struct mrb_data_type http_parser_context_type = {
@@ -48,7 +44,7 @@ static const struct mrb_data_type http_parser_context_type = {
 static void
 http_request_free(mrb_state *mrb, void *p)
 {
-  free(p);
+  mrb_free(mrb, p);
 }
 
 static const struct mrb_data_type http_requset_type = {
@@ -64,9 +60,16 @@ parser_settings_on_url(http_parser* parser, const char *at, size_t len)
   if(http_parser_parse_url(at, len, FALSE, &context->handle) != 0) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
-  context->buf = mrb_str_new(mrb, at, len);
+
+  mrb_iv_set(mrb, context->instance, mrb_intern(mrb, "buf"), mrb_str_new(mrb, at, len));
   return 0;
 }
+
+#define CTXV_GET(ctx, name) \
+  mrb_iv_get(ctx->mrb, ctx->instance, mrb_intern(ctx->mrb, name))
+
+#define CTXV_SET(ctx, name, value) \
+  mrb_iv_set(ctx->mrb, ctx->instance, mrb_intern(ctx->mrb, name), value)
 
 static int
 parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
@@ -75,14 +78,14 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
   mrb_state* mrb = context->mrb;
 
   if (context->was_header_value) {
-    if (!mrb_nil_p(context->last_header_field)) {
-      mrb_str_concat(mrb, context->last_header_field, context->last_header_value);
-      context->last_header_value = mrb_nil_value();
+    if (!mrb_nil_p(CTXV_GET(context, "last_header_field"))) {
+      mrb_str_concat(mrb, CTXV_GET(context, "last_header_field"), CTXV_GET(context, "last_header_value"));
+      CTXV_SET(context, "last_header_value", mrb_nil_value());
     }
-    context->last_header_field = mrb_str_new(mrb, at, len);
+    CTXV_SET(context, "last_header_field", mrb_str_new(mrb, at, len));
     context->was_header_value = FALSE;
   } else {
-    mrb_str_concat(mrb, context->last_header_field, mrb_str_new(mrb, at, len));
+    mrb_str_concat(mrb, CTXV_GET(context, "last_header_field"), mrb_str_new(mrb, at, len));
   }
   return 0;
 }
@@ -94,10 +97,10 @@ parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
   mrb_state* mrb = context->mrb;
 
   if(!context->was_header_value) {
-    context->last_header_value = mrb_str_new(mrb, at, len);
+    CTXV_SET(context, "last_header_value", mrb_str_new(mrb, at, len));
     context->was_header_value = TRUE;
   } else {
-    mrb_str_concat(mrb, context->last_header_value, mrb_str_new(mrb, at, len));
+    mrb_str_concat(mrb, CTXV_GET(context, "last_header_value"), mrb_str_new(mrb, at, len));
   }
   return 0;
 }
@@ -108,8 +111,10 @@ parser_settings_on_headers_complete(http_parser* parser)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
-  if(!mrb_nil_p(context->last_header_field)) {
-    mrb_hash_set(mrb, context->headers, context->last_header_field, context->last_header_value);
+  if(!mrb_nil_p(CTXV_GET(context, "last_header_field"))) {
+    mrb_hash_set(mrb, CTXV_GET(context, "headers"),
+        CTXV_GET(context, "last_header_field"),
+        CTXV_GET(context, "last_header_value"));
   }
   return 1;
 }
@@ -127,9 +132,9 @@ parser_settings_on_message_complete(http_parser* parser)
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
   mrb_iv_set(mrb, c, mrb_intern(mrb, "parser_context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
-    &http_parser_context_type, (void*) context)));
+    NULL, (void*) context)));
   mrb_yield(context->mrb, proc, c);
-  
+
   return 0;
 }
 
@@ -142,7 +147,7 @@ mrb_http_parser_init(mrb_state *mrb, mrb_value self)
   memset(context, 0, sizeof(mrb_http_parser_context));
   context->mrb = mrb;
   context->instance = self;
-  mrb_iv_set(mrb, self, mrb_intern(mrb, "data"), mrb_obj_value(
+  mrb_iv_set(mrb, self, mrb_intern(mrb, "parser_context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
     &http_parser_context_type, (void*) context)));
   return self;
@@ -156,7 +161,7 @@ mrb_http_parser_parse(mrb_state *mrb, mrb_value self)
   mrb_http_parser_context* context;
   struct RProc *b = NULL;
 
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "data"));
+  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "parser_context"));
   Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
@@ -170,7 +175,7 @@ mrb_http_parser_parse(mrb_state *mrb, mrb_value self)
 
   context->parser.data = context;
   context->was_header_value = TRUE;
-  context->headers = mrb_hash_new(mrb, 32);
+  CTXV_SET(context, "headers", mrb_hash_new(mrb, 32));
 
   http_parser_init(&context->parser, HTTP_REQUEST);
 
@@ -196,7 +201,7 @@ mrb_http_parser_execute(mrb_state *mrb, mrb_value self)
   mrb_value value_context;
   mrb_http_parser_context* context;
 
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "data"));
+  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "parser_context"));
   Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
@@ -228,7 +233,7 @@ mrb_http_request_schema(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   if (context->handle.field_set & (1<<UF_SCHEMA)) {
-    return mrb_str_substr(mrb, context->buf, context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len);
+    return mrb_str_substr(mrb, mrb_iv_get(mrb, context->instance, mrb_intern(mrb, "buf")), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len);
   }
   return mrb_nil_value();
 }
@@ -246,7 +251,7 @@ mrb_http_request_host(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   if (context->handle.field_set & (1<<UF_HOST)) {
-    return mrb_str_substr(mrb, context->buf, context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len);
+    return mrb_str_substr(mrb, CTXV_GET(context, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len);
   }
   return mrb_nil_value();
 }
@@ -284,7 +289,7 @@ mrb_http_request_path(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   if (context->handle.field_set & (1<<UF_PATH)) {
-    return mrb_str_substr(mrb, context->buf, context->handle.field_data[UF_PATH].off, context->handle.field_data[UF_PATH].len);
+    return mrb_str_substr(mrb, CTXV_GET(context, "buf"), context->handle.field_data[UF_PATH].off, context->handle.field_data[UF_PATH].len);
   }
   return mrb_nil_value();
 }
@@ -301,7 +306,7 @@ mrb_http_request_query(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   if (context->handle.field_set & (1<<UF_QUERY)) {
-    return mrb_str_substr(mrb, context->buf, context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len);
+    return mrb_str_substr(mrb, CTXV_GET(context, "buf"), context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len);
   }
   return mrb_nil_value();
 }
@@ -318,7 +323,7 @@ mrb_http_request_fragment(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   if (context->handle.field_set & (1<<UF_FRAGMENT)) {
-    return mrb_str_substr(mrb, context->buf, context->handle.field_data[UF_FRAGMENT].off, context->handle.field_data[UF_FRAGMENT].len);
+    return mrb_str_substr(mrb, CTXV_GET(context, "buf"), context->handle.field_data[UF_FRAGMENT].off, context->handle.field_data[UF_FRAGMENT].len);
   }
   return mrb_nil_value();
 }
@@ -334,7 +339,7 @@ mrb_http_request_headers(mrb_state *mrb, mrb_value self)
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
-  return context->headers;
+  return CTXV_GET(context, "headers");
 }
 
 /*********************************************************
