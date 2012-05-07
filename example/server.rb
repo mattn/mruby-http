@@ -7,7 +7,7 @@ s.listen(5) {|x|
   return if x != 0
   c = s.accept()
   c.read_start {|b|
-    h = data = HTTP::Parser.new()
+    h = HTTP::Parser.new()
     h.parse(b) {|x|
       # TODO: response object
       c.write("HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nhello\n") {|r|
