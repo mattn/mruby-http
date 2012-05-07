@@ -34,7 +34,7 @@ typedef struct {
 static void
 http_parser_context_free(mrb_state *mrb, void *p)
 {
-  mrb_free(mrb, p);
+  if (p) mrb_free(mrb, p);
 }
 
 static const struct mrb_data_type http_parser_context_type = {
@@ -44,7 +44,7 @@ static const struct mrb_data_type http_parser_context_type = {
 static void
 http_request_free(mrb_state *mrb, void *p)
 {
-  mrb_free(mrb, p);
+  if (p) mrb_free(mrb, p);
 }
 
 static const struct mrb_data_type http_requset_type = {
@@ -125,14 +125,23 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_value proc;
   mrb_value c;
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
+  mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
 
   proc = mrb_iv_get(context->mrb, context->instance, mrb_intern(context->mrb, "complete_cb"));
 
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
+  new_context = (mrb_http_parser_context*) mrb_malloc(mrb, sizeof(mrb_http_parser_context));
+  memset(new_context, 0, sizeof(mrb_http_parser_context));
+  new_context->mrb = mrb;
+  new_context->parser = context->parser;
+  new_context->handle = context->handle;
+  new_context->settings = context->settings;
+  new_context->was_header_value = context->was_header_value;
+  new_context->instance = c;
   mrb_iv_set(mrb, c, mrb_intern(mrb, "parser_context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
-    NULL, (void*) context)));
+    &http_parser_context_type, (void*) new_context)));
   mrb_yield(context->mrb, proc, c);
 
   return 0;
