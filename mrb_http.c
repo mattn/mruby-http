@@ -132,12 +132,7 @@ parser_settings_on_message_complete(http_parser* parser)
 
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
   new_context = (mrb_http_parser_context*) mrb_malloc(mrb, sizeof(mrb_http_parser_context));
-  memset(new_context, 0, sizeof(mrb_http_parser_context));
-  new_context->mrb = mrb;
-  new_context->parser = context->parser;
-  new_context->handle = context->handle;
-  new_context->settings = context->settings;
-  new_context->was_header_value = context->was_header_value;
+  memcpy(new_context, context, sizeof(mrb_http_parser_context));
   new_context->instance = c;
   mrb_iv_set(mrb, c, mrb_intern(mrb, "parser_context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
