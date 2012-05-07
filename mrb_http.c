@@ -122,8 +122,8 @@ parser_settings_on_headers_complete(http_parser* parser)
 static int
 parser_settings_on_message_complete(http_parser* parser)
 {
-  mrb_value proc;
   mrb_value c;
+  mrb_value proc;
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
@@ -133,11 +133,16 @@ parser_settings_on_message_complete(http_parser* parser)
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
   new_context = (mrb_http_parser_context*) mrb_malloc(mrb, sizeof(mrb_http_parser_context));
   memcpy(new_context, context, sizeof(mrb_http_parser_context));
-  new_context->instance = c;
   mrb_iv_set(mrb, c, mrb_intern(mrb, "parser_context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
     &http_parser_context_type, (void*) new_context)));
   mrb_yield(context->mrb, proc, c);
+  mrb_iv_set(mrb, c, mrb_intern(mrb, "parser_context"), mrb_nil_value());
+  CTXV_SET(context, "headers", mrb_nil_value());
+  CTXV_SET(context, "last_header_field", mrb_nil_value());
+  CTXV_SET(context, "last_header_value", mrb_nil_value());
+  CTXV_SET(context, "buf", mrb_nil_value());
+  CTXV_SET(context, "complete_cb", mrb_nil_value());
 
   return 0;
 }
