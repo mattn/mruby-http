@@ -366,6 +366,22 @@ mrb_http_request_headers(mrb_state *mrb, mrb_value self)
   return CTXV_GET(context, "headers");
 }
 
+static mrb_value
+mrb_http_request_method(mrb_state *mrb, mrb_value self)
+{
+  mrb_value value_context;
+  mrb_http_parser_context* context;
+  const char* method;
+
+  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "parser_context"));
+  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  if (!context) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
+  }
+  method = http_method_str(context->parser.method);
+  return mrb_str_new(mrb, method, strlen(method));
+}
+
 /*********************************************************
  * response
  *********************************************************/
@@ -393,6 +409,7 @@ mrb_http_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_request, "query", mrb_http_request_query, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "fragment", mrb_http_request_fragment, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "headers", mrb_http_request_headers, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "method", mrb_http_request_method, ARGS_NONE());
 
   _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
 }
