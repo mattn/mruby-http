@@ -9,9 +9,10 @@ s.listen(50) {|x|
   c = s.accept()
   c.read_start {|b|
     h = HTTP::Parser.new()
-    h.parse(b) {|x|
+    h.parse(b) {|r|
       # TODO: response object
-      c.write("HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nhello\n") {|r|
+      body = "hello #{r.path}"
+      c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
         c.close
       }
     }
