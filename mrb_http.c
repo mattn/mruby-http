@@ -226,6 +226,21 @@ mrb_http_parser_execute(mrb_state *mrb, mrb_value self)
   return mrb_nil_value();
 }
 
+static mrb_value
+mrb_http_parser_data_get(mrb_state *mrb, mrb_value self)
+{
+  return mrb_iv_get(mrb, self, mrb_intern(mrb, "data"));
+}
+
+static mrb_value
+mrb_http_parser_data_set(mrb_state *mrb, mrb_value self)
+{
+  mrb_value arg;
+  mrb_get_args(mrb, "o", &arg);
+  mrb_iv_set(mrb, self, mrb_intern(mrb, "data"), arg);
+  return mrb_nil_value();
+}
+
 /*********************************************************
  * request
  *********************************************************/
@@ -367,6 +382,8 @@ mrb_http_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_parser, "initialize", mrb_http_parser_init, ARGS_OPT(1));
   mrb_define_method(mrb, _class_http_parser, "parse", mrb_http_parser_parse, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "execute", mrb_http_parser_execute, ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_parser, "data=", mrb_http_parser_data_set, ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_parser, "data", mrb_http_parser_data_get, ARGS_NONE());
 
   _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
   mrb_define_method(mrb, _class_http_request, "schema", mrb_http_request_schema, ARGS_NONE());
