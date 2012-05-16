@@ -138,6 +138,7 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
+  mrb_value args[2];
 
   proc = mrb_iv_get(context->mrb, context->instance, mrb_intern(context->mrb, "complete_cb"));
 
@@ -147,7 +148,9 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
     &http_parser_context_type, (void*) new_context)));
-  mrb_yield(context->mrb, proc, c);
+  args[0] = context->instance;
+  args[1] = c;
+  mrb_yield_argv(context->mrb, proc, 2, args);
   mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_nil_value());
   PARSER_SET(context, "headers", mrb_nil_value());
   PARSER_SET(context, "last_header_field", mrb_nil_value());

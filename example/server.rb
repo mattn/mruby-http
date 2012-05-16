@@ -4,12 +4,12 @@ require 'UV'
 s = UV::TCP.new()
 s.bind(UV::ip4_addr('127.0.0.1', 8888))
 s.data = []
-s.listen(50) {|x|
+s.listen(50) {|s, x|
   return if x != 0
   c = s.accept()
-  c.read_start {|b|
+  c.read_start {|c, b|
     h = HTTP::Parser.new()
-    h.parse_request(b) {|r|
+    h.parse_request(b) {|h, r|
       # TODO: response object
       body = "hello #{r.path}"
       c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
