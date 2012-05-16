@@ -12,7 +12,7 @@ s.listen(50) {|s, x|
     h.parse_request(b) {|h, r|
       # TODO: response object
       body = "hello #{r.path}"
-      c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
+      c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|c, x|
         c.close
       }
     }
