@@ -5,7 +5,7 @@
 #include <mruby.h>
 #include <mruby/proc.h>
 #include <mruby/data.h>
-#include <compile.h>
+#include <mruby/compile.h>
 #include <mrb_uv.h>
 #include <mrb_http.h>
 
