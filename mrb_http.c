@@ -198,7 +198,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
 
   context->parser.data = context;
   context->was_header_value = TRUE;
-  PARSER_SET(context, "headers", mrb_hash_new(mrb, 32));
+  PARSER_SET(context, "headers", mrb_hash_new_capa(mrb, 32));
 
   http_parser_init(&context->parser, HTTP_REQUEST);
 
