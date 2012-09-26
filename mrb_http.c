@@ -35,7 +35,7 @@ typedef struct {
 static void
 http_parser_context_free(mrb_state *mrb, void *p)
 {
-  if (p) mrb_free(mrb, p);
+  free(p);
 }
 
 static const struct mrb_data_type http_parser_context_type = {
@@ -45,7 +45,7 @@ static const struct mrb_data_type http_parser_context_type = {
 static void
 http_request_free(mrb_state *mrb, void *p)
 {
-  if (p) mrb_free(mrb, p);
+  free(p);
 }
 
 static const struct mrb_data_type http_requset_type = {
@@ -55,7 +55,7 @@ static const struct mrb_data_type http_requset_type = {
 static void
 http_url_free(mrb_state *mrb, void *p)
 {
-  if (p) mrb_free(mrb, p);
+  free(p);
 }
 
 static const struct mrb_data_type http_url_type = {
@@ -143,7 +143,7 @@ parser_settings_on_message_complete(http_parser* parser)
   proc = mrb_iv_get(context->mrb, context->instance, mrb_intern(context->mrb, "complete_cb"));
 
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
-  new_context = (mrb_http_parser_context*) mrb_malloc(mrb, sizeof(mrb_http_parser_context));
+  new_context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
   memcpy(new_context, context, sizeof(mrb_http_parser_context));
   mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
@@ -151,7 +151,6 @@ parser_settings_on_message_complete(http_parser* parser)
   args[0] = context->instance;
   args[1] = c;
   mrb_yield_argv(context->mrb, proc, 2, args);
-  mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_nil_value());
   PARSER_SET(context, "headers", mrb_nil_value());
   PARSER_SET(context, "last_header_field", mrb_nil_value());
   PARSER_SET(context, "last_header_value", mrb_nil_value());
@@ -166,7 +165,7 @@ mrb_http_parser_init(mrb_state *mrb, mrb_value self)
 {
   mrb_http_parser_context* context = NULL;
 
-  context = (mrb_http_parser_context*) mrb_malloc(mrb, sizeof(mrb_http_parser_context));
+  context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
   memset(context, 0, sizeof(mrb_http_parser_context));
   context->mrb = mrb;
   context->instance = self;
@@ -212,7 +211,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
 
   if (RSTRING_LEN(arg_data) > 0) {
     char* data = RSTRING_PTR(arg_data);
-    size_t len = RSTRING_CAPA(arg_data);
+    size_t len = RSTRING_LEN(arg_data);
     http_parser_execute(&context->parser, &context->settings, data, len);
   }
 
@@ -251,7 +250,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
 
   mrb_get_args(mrb, "o", &arg_data);
 
-  context = (struct http_parser_url*) mrb_malloc(mrb, sizeof(struct http_parser_url));
+  context = (struct http_parser_url*) malloc(sizeof(struct http_parser_url));
   memset(context, 0, sizeof(struct http_parser_url));
   http_parser_parse_url(RSTRING_PTR(arg_data), RSTRING_LEN(arg_data), FALSE, context);
 
