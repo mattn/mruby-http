@@ -12,10 +12,10 @@ s.listen(200) {|s, x|
       #body = "hello #{r.path}"
       body = "hello"
       c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|c, x|
-	    c.close()
+        c.close()
       }
     }
-	h = nil
+    h = nil
   }
 }
 
