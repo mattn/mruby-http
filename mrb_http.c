@@ -179,7 +179,7 @@ mrb_http_parser_init(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
 {
-  mrb_value arg_data;
+  mrb_value arg_data = mrb_nil_value();
   mrb_value value_context;
   mrb_http_parser_context* context;
   struct RProc *b = NULL;
@@ -190,7 +190,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
-  mrb_get_args(mrb, "bo", &b, &arg_data);
+  mrb_get_args(mrb, "|&o", &b, &arg_data);
   if (mrb_nil_p(arg_data)) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -198,7 +198,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
 
   context->parser.data = context;
   context->was_header_value = TRUE;
-  PARSER_SET(context, "headers", mrb_hash_new(mrb, 32));
+  PARSER_SET(context, "headers", mrb_hash_new(mrb));
 
   http_parser_init(&context->parser, HTTP_REQUEST);
 
