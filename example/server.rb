@@ -1,13 +1,11 @@
-m = UV::Mutex.new()
 s = UV::TCP.new()
 s.bind(UV::ip4_addr('127.0.0.1', 8888))
+s.data = []
 s.listen(200) {|s, x|
   return if x != 0
-  m.lock()
   c = s.accept()
-  m.unlock()
-  h = HTTP::Parser.new()
   c.read_start {|c, b|
+    h = HTTP::Parser.new()
     h.parse_request(b) {|h, r|
       #body = "hello #{r.path}"
       body = "hello"
@@ -15,10 +13,8 @@ s.listen(200) {|s, x|
         c.close()
       }
     }
-    h = nil
   }
+  s.data << c
 }
 
-while 1
-  UV::run_once()
-end
+UV::run()
