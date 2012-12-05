@@ -183,6 +183,8 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   mrb_http_parser_context* context;
   struct RProc *b = NULL;
 
+  int ai = mrb_gc_arena_save(mrb);
+
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
   Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
   if (!context) {
@@ -214,6 +216,8 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
     size_t len = RSTRING_LEN(arg_data);
     http_parser_execute(&context->parser, &context->settings, data, len);
   }
+
+  mrb_gc_arena_restore(mrb, ai);
 
   return mrb_nil_value();
 }
