@@ -34,7 +34,7 @@ module Sinatic
         h.parse_request(b) {|h, r|
           i = b.index("\r\n\r\n") + 4
           r.body = b.slice(i, b.size - i)
-          c.write(::Sinatic.do(r)) {|c, x| c.close }
+          c.write(::Sinatic.do(r)) {|c, x| c.close() }
         }
       }
       s.data << c
