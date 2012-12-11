@@ -618,7 +618,7 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
  *********************************************************/
 
 void
-mrb_http_init(mrb_state* mrb) {
+mrb_mruby_http_gem_init(mrb_state* mrb) {
   _class_http = mrb_define_module(mrb, "HTTP");
 
   _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
