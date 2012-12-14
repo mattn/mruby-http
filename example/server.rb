@@ -8,7 +8,7 @@ s.listen(200) {|x|
     h = HTTP::Parser.new()
     h.parse_request(b) {|r|
       body = "hello #{r.path}"
-      c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|c, x|
+      c.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
         c.close()
       }
     }
