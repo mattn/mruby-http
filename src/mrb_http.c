@@ -29,7 +29,8 @@ typedef struct {
   struct http_parser_url handle;
   struct http_parser_settings settings;
   int was_header_value;
-  mrb_value instance; /* callback */
+  struct RProc* proc;
+  mrb_value instance;
 } mrb_http_parser_context;
 
 static void
@@ -72,7 +73,9 @@ parser_settings_on_url(http_parser* parser, const char *at, size_t len)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
+  int ai = mrb_gc_arena_save(mrb);
   mrb_iv_set(mrb, context->instance, mrb_intern(mrb, "buf"), mrb_str_new(mrb, at, len));
+  mrb_gc_arena_restore(mrb, ai);
   return 0;
 }
 
@@ -138,9 +141,7 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
-  mrb_value args[2];
-
-  proc = mrb_iv_get(context->mrb, context->instance, mrb_intern(context->mrb, "complete_cb"));
+  mrb_value args[1];
 
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
   new_context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
@@ -148,14 +149,12 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
     &http_parser_context_type, (void*) new_context)));
-  args[0] = context->instance;
-  args[1] = c;
-  mrb_yield_argv(context->mrb, proc, 2, args);
+  args[0] = c;
+  mrb_yield_argv(context->mrb, mrb_obj_value(context->proc), 1, args);
   PARSER_SET(context, "headers", mrb_nil_value());
   PARSER_SET(context, "last_header_field", mrb_nil_value());
   PARSER_SET(context, "last_header_value", mrb_nil_value());
   PARSER_SET(context, "buf", mrb_nil_value());
-  PARSER_SET(context, "complete_cb", mrb_nil_value());
 
   return 0;
 }
@@ -195,8 +194,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   if (mrb_nil_p(arg_data)) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
-  mrb_iv_set(mrb, self, mrb_intern(mrb, "complete_cb"), b ? mrb_obj_value(b) : mrb_nil_value());
-
+  context->proc = b;
   context->parser.data = context;
   context->was_header_value = TRUE;
   PARSER_SET(context, "headers", mrb_hash_new(mrb));
