@@ -10,6 +10,19 @@
 #include <stdio.h>
 #include <string.h>
 
+#if 1
+#define ARENA_SAVE \
+  int ai = mrb_gc_arena_save(mrb); \
+  if (ai == MRB_ARENA_SIZE) { \
+    mrb_raise(mrb, E_RUNTIME_ERROR, "arena overflow"); \
+  }
+#define ARENA_RESTORE \
+  mrb_gc_arena_restore(mrb, ai);
+#else
+#define ARENA_SAVE
+#define ARENA_RESTORE
+#endif
+
 #define MAX_HEADER_NAME_LEN 1024
 #define MAX_HEADERS         128
 
@@ -29,7 +42,7 @@ typedef struct {
   struct http_parser_url handle;
   struct http_parser_settings settings;
   int was_header_value;
-  struct RProc* proc;
+  mrb_value proc;
   mrb_value instance;
 } mrb_http_parser_context;
 
@@ -73,9 +86,9 @@ parser_settings_on_url(http_parser* parser, const char *at, size_t len)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
-  int ai = mrb_gc_arena_save(mrb);
+  ARENA_SAVE;
   mrb_iv_set(mrb, context->instance, mrb_intern(mrb, "buf"), mrb_str_new(mrb, at, len));
-  mrb_gc_arena_restore(mrb, ai);
+  ARENA_RESTORE;
   return 0;
 }
 
@@ -91,6 +104,7 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
+  ARENA_SAVE;
   if (context->was_header_value) {
     if (!mrb_nil_p(PARSER_GET(context, "last_header_field"))) {
       mrb_str_concat(mrb, PARSER_GET(context, "last_header_field"), PARSER_GET(context, "last_header_value"));
@@ -101,6 +115,7 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
   } else {
     mrb_str_concat(mrb, PARSER_GET(context, "last_header_field"), mrb_str_new(mrb, at, len));
   }
+  ARENA_RESTORE;
   return 0;
 }
 
@@ -110,12 +125,14 @@ parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
+  ARENA_SAVE;
   if(!context->was_header_value) {
     PARSER_SET(context, "last_header_value", mrb_str_new(mrb, at, len));
     context->was_header_value = TRUE;
   } else {
     mrb_str_concat(mrb, PARSER_GET(context, "last_header_value"), mrb_str_new(mrb, at, len));
   }
+  ARENA_RESTORE;
   return 0;
 }
 
@@ -125,11 +142,13 @@ parser_settings_on_headers_complete(http_parser* parser)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
+  ARENA_SAVE;
   if(!mrb_nil_p(PARSER_GET(context, "last_header_field"))) {
     mrb_hash_set(mrb, PARSER_GET(context, "headers"),
         PARSER_GET(context, "last_header_field"),
         PARSER_GET(context, "last_header_value"));
   }
+  ARENA_RESTORE;
   return 1;
 }
 
@@ -137,7 +156,6 @@ static int
 parser_settings_on_message_complete(http_parser* parser)
 {
   mrb_value c;
-  mrb_value proc;
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
@@ -150,7 +168,7 @@ parser_settings_on_message_complete(http_parser* parser)
     Data_Wrap_Struct(mrb, mrb->object_class,
     &http_parser_context_type, (void*) new_context)));
   args[0] = c;
-  mrb_yield_argv(context->mrb, mrb_obj_value(context->proc), 1, args);
+  mrb_yield_argv(context->mrb, context->proc, 1, args);
   PARSER_SET(context, "headers", mrb_nil_value());
   PARSER_SET(context, "last_header_field", mrb_nil_value());
   PARSER_SET(context, "last_header_value", mrb_nil_value());
@@ -180,9 +198,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   mrb_value arg_data = mrb_nil_value();
   mrb_value value_context;
   mrb_http_parser_context* context;
-  struct RProc *b = NULL;
-
-  int ai = mrb_gc_arena_save(mrb);
+  mrb_value b = mrb_nil_value();
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
   Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
@@ -205,7 +221,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   context->settings.on_header_field = parser_settings_on_header_field;
   context->settings.on_header_value = parser_settings_on_header_value;
   context->settings.on_headers_complete = parser_settings_on_headers_complete;
-  if (b) {
+  if (!mrb_nil_p(b)) {
     context->settings.on_message_complete = parser_settings_on_message_complete;
   }
 
@@ -214,8 +230,6 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
     size_t len = RSTRING_LEN(arg_data);
     http_parser_execute(&context->parser, &context->settings, data, len);
   }
-
-  mrb_gc_arena_restore(mrb, ai);
 
   return mrb_nil_value();
 }
@@ -401,7 +415,10 @@ mrb_http_request_method(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   method = http_method_str(context->parser.method);
-  return mrb_str_new(mrb, method, strlen(method));
+  ARENA_SAVE;
+  mrb_value str = mrb_str_new(mrb, method, strlen(method));
+  ARENA_RESTORE;
+  return str;
 }
 
 static mrb_value
