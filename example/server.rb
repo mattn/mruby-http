@@ -11,7 +11,7 @@ s.listen(1024) {|x|
       c.write("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
         c.close() if c
         c = nil
-        GC.start
+        #GC.start
       }
     }
   }
