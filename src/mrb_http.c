@@ -348,7 +348,7 @@ mrb_http_request_port(mrb_state *mrb, mrb_value self)
     return mrb_fixnum_value(context->handle.port);
   }
   mrb_value schema = mrb_http_request_schema(mrb, self);
-  if (!mrb_nil_p(schema) && !strncmp("https", (char*) RSTRING_PTR(schema), RSTRING_LEN(schema))) {
+  if (!mrb_nil_p(schema) && !strncmp("https", (char*) RSTRING_PTR(schema), RSTRING_LEN(schema)) && strlen("https") == RSTRING_LEN(schema)) {
     return mrb_fixnum_value(443);
   }
   return mrb_fixnum_value(80);
@@ -497,7 +497,7 @@ mrb_http_url_port(mrb_state *mrb, mrb_value self)
     return mrb_fixnum_value(context->port);
   }
   mrb_value schema = mrb_http_url_schema(mrb, self);
-  if (!mrb_nil_p(schema) && !strncmp("https", (char*) RSTRING_PTR(schema), RSTRING_LEN(schema))) {
+  if (!mrb_nil_p(schema) && !strncmp("https", (char*) RSTRING_PTR(schema), RSTRING_LEN(schema)) && strlen("https") == RSTRING_LEN(schema)) {
     return mrb_fixnum_value(443);
   }
   return mrb_fixnum_value(80);
