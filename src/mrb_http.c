@@ -52,7 +52,8 @@ http_parser_context_free(mrb_state *mrb, void *p)
   free(p);
 }
 
-static const struct mrb_data_type http_parser_context_type = {
+static const struct mrb_data_type
+http_parser_context_type = {
   "mrb_http_parser_context", http_parser_context_free,
 };
 
@@ -62,7 +63,8 @@ http_request_free(mrb_state *mrb, void *p)
   free(p);
 }
 
-static const struct mrb_data_type http_requset_type = {
+static const struct mrb_data_type
+http_requset_type = {
   "mrb_http_request", http_request_free,
 };
 
@@ -149,7 +151,19 @@ parser_settings_on_headers_complete(http_parser* parser)
         PARSER_GET(context, "last_header_value"));
   }
   ARENA_RESTORE;
-  return 1;
+  return 0;
+}
+
+static int
+parser_settings_on_body(http_parser *parser, const char *p, size_t len)
+{
+  mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
+  mrb_state* mrb = context->mrb;
+
+  ARENA_SAVE;
+  PARSER_SET(context, "body", mrb_str_new(mrb, p, len));
+  ARENA_RESTORE;
+  return 0;
 }
 
 static int
@@ -221,6 +235,7 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   context->settings.on_header_field = parser_settings_on_header_field;
   context->settings.on_header_value = parser_settings_on_header_value;
   context->settings.on_headers_complete = parser_settings_on_headers_complete;
+  context->settings.on_body = parser_settings_on_body;
   if (!mrb_nil_p(b)) {
     context->settings.on_message_complete = parser_settings_on_message_complete;
   }
@@ -424,15 +439,31 @@ mrb_http_request_method(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_http_request_body_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_iv_get(mrb, self, mrb_intern(mrb, "body"));
+  mrb_value value_context;
+  mrb_http_parser_context* context;
+
+  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
+  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  if (!context) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
+  }
+  return PARSER_GET(context, "body");
 }
 
 static mrb_value
 mrb_http_request_body_set(mrb_state *mrb, mrb_value self)
 {
+  mrb_value value_context;
+  mrb_http_parser_context* context;
+
+  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
+  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  if (!context) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
+  }
   mrb_value arg;
   mrb_get_args(mrb, "o", &arg);
-  mrb_iv_set(mrb, self, mrb_intern(mrb, "body"), arg);
+  PARSER_SET(context, "body", arg);
   return mrb_nil_value();
 }
 
