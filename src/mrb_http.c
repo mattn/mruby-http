@@ -38,6 +38,7 @@ static struct RClass *_class_http_url;
 
 typedef struct {
   mrb_state *mrb;
+  int type;
   struct http_parser parser;
   struct http_parser_url handle;
   struct http_parser_settings settings;
@@ -58,14 +59,14 @@ http_parser_context_type = {
 };
 
 static void
-http_request_free(mrb_state *mrb, void *p)
+http_object_free(mrb_state *mrb, void *p)
 {
   free(p);
 }
 
 static const struct mrb_data_type
-http_requset_type = {
-  "mrb_http_request", http_request_free,
+http_object_type = {
+  "mrb_http_object", http_object_free,
 };
 
 static void
@@ -175,12 +176,15 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_state* mrb = context->mrb;
   mrb_value args[1];
 
-  c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
+  if (context->type == HTTP_REQUEST)
+    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
+  else
+    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_response);
   new_context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
   memcpy(new_context, context, sizeof(mrb_http_parser_context));
   mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
-    &http_parser_context_type, (void*) new_context)));
+    &http_object_type, (void*) new_context)));
   args[0] = c;
   mrb_yield_argv(context->mrb, context->proc, 1, args);
   PARSER_SET(context, "headers", mrb_nil_value());
@@ -207,7 +211,7 @@ mrb_http_parser_init(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
+_http_parser_parse(mrb_state *mrb, mrb_value self, int type)
 {
   mrb_value arg_data = mrb_nil_value();
   mrb_value value_context;
@@ -229,8 +233,9 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   context->was_header_value = TRUE;
   PARSER_SET(context, "headers", mrb_hash_new(mrb));
 
-  http_parser_init(&context->parser, HTTP_REQUEST);
+  http_parser_init(&context->parser, type);
 
+  context->type = type;
   context->settings.on_url = parser_settings_on_url;
   context->settings.on_header_field = parser_settings_on_header_field;
   context->settings.on_header_value = parser_settings_on_header_value;
@@ -247,6 +252,18 @@ mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
   }
 
   return mrb_nil_value();
+}
+
+static mrb_value
+mrb_http_parser_parse_request(mrb_state *mrb, mrb_value self)
+{
+  return _http_parser_parse(mrb, self, HTTP_REQUEST);
+}
+
+static mrb_value
+mrb_http_parser_parse_response(mrb_state *mrb, mrb_value self)
+{
+  return _http_parser_parse(mrb, self, HTTP_RESPONSE);
 }
 
 static mrb_value
@@ -314,13 +331,13 @@ mrb_http_data_set(mrb_state *mrb, mrb_value self)
  *********************************************************/
 
 static mrb_value
-mrb_http_request_schema(mrb_state *mrb, mrb_value self)
+mrb_http_object_schema(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -332,13 +349,13 @@ mrb_http_request_schema(mrb_state *mrb, mrb_value self)
 
 
 static mrb_value
-mrb_http_request_host(mrb_state *mrb, mrb_value self)
+mrb_http_object_host(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -349,20 +366,20 @@ mrb_http_request_host(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_port(mrb_state *mrb, mrb_value self)
+mrb_http_object_port(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   if (context->handle.field_set & (1<<UF_PORT)) {
     return mrb_fixnum_value(context->handle.port);
   }
-  mrb_value schema = mrb_http_request_schema(mrb, self);
+  mrb_value schema = mrb_http_object_schema(mrb, self);
   if (!mrb_nil_p(schema) && !strcmp("https", (char*) RSTRING_PTR(schema))) {
     return mrb_fixnum_value(443);
   }
@@ -370,13 +387,13 @@ mrb_http_request_port(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_path(mrb_state *mrb, mrb_value self)
+mrb_http_object_path(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -387,13 +404,13 @@ mrb_http_request_path(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_query(mrb_state *mrb, mrb_value self)
+mrb_http_object_query(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -404,13 +421,13 @@ mrb_http_request_query(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_headers(mrb_state *mrb, mrb_value self)
+mrb_http_object_headers(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -418,14 +435,14 @@ mrb_http_request_headers(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_method(mrb_state *mrb, mrb_value self)
+mrb_http_object_method(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
   const char* method;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -437,13 +454,13 @@ mrb_http_request_method(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_body_get(mrb_state *mrb, mrb_value self)
+mrb_http_object_body_get(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -451,13 +468,13 @@ mrb_http_request_body_get(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_http_request_body_set(mrb_state *mrb, mrb_value self)
+mrb_http_object_body_set(mrb_state *mrb, mrb_value self)
 {
   mrb_value value_context;
   mrb_http_parser_context* context;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
+  Data_Get_Struct(mrb, value_context, &http_object_type, context);
   if (!context) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
@@ -670,23 +687,24 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
   mrb_define_method(mrb, _class_http_parser, "initialize", mrb_http_parser_init, ARGS_OPT(1));
   mrb_define_method(mrb, _class_http_parser, "parse_request", mrb_http_parser_parse_request, ARGS_OPT(2));
+  mrb_define_method(mrb, _class_http_parser, "parse_response", mrb_http_parser_parse_response, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_url", mrb_http_parser_parse_url, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_parser, "execute", mrb_http_parser_execute, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_parser, "data=", mrb_http_data_set, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_parser, "data", mrb_http_data_get, ARGS_NONE());
 
   _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
-  mrb_define_method(mrb, _class_http_request, "schema", mrb_http_request_schema, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "host", mrb_http_request_host, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "port", mrb_http_request_port, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "path", mrb_http_request_path, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "query", mrb_http_request_query, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "headers", mrb_http_request_headers, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "method", mrb_http_request_method, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "schema", mrb_http_object_schema, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "host", mrb_http_object_host, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "port", mrb_http_object_port, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "path", mrb_http_object_path, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "query", mrb_http_object_query, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "headers", mrb_http_object_headers, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "method", mrb_http_object_method, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "data=", mrb_http_data_set, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_request, "data", mrb_http_data_get, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "body=", mrb_http_request_body_set, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_request, "body", mrb_http_request_body_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
 
   _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
   mrb_define_method(mrb, _class_http_url, "schema", mrb_http_url_schema, ARGS_NONE());
@@ -699,6 +717,17 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, _class_http_url, "decode", mrb_http_url_decode, ARGS_REQ(1));
 
   _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
+  mrb_define_method(mrb, _class_http_response, "schema", mrb_http_object_schema, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "host", mrb_http_object_host, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "port", mrb_http_object_port, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "path", mrb_http_object_path, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "query", mrb_http_object_query, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "headers", mrb_http_object_headers, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "method", mrb_http_object_method, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "data=", mrb_http_data_set, ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_response, "data", mrb_http_data_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
 }
 
 /* vim:set et ts=2 sts=2 sw=2 tw=0: */
