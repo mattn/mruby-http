@@ -6,12 +6,11 @@ s.listen(1024) {|x|
   c = s.accept()
   c.read_start {|b|
     return unless b
-    h.parse_request(b) {|r|
-      body = "hello #{r.path}"
-      c.write("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
-        c.close() if c
-        c = nil
-      }
+    r = h.parse_request(b)
+    body = "hello #{r.path}"
+    c.write("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: #{body.size}\r\n\r\n#{body}") {|x|
+      c.close() if c
+      c = nil
     }
   }
 }

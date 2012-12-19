@@ -34,3 +34,13 @@ h.parse_request(q) {|x|
   puts x.body
 }
 puts
+
+x = h.parse_request(q)
+puts x.method
+puts x.schema
+puts x.host
+puts x.port
+puts x.path
+puts x.query
+puts x.body
+puts
