@@ -727,7 +727,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_response, "data=", mrb_http_data_set, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_response, "data", mrb_http_data_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "body", mrb_http_object_body_get, ARGS_NONE());
 }
 
 /* vim:set et ts=2 sts=2 sw=2 tw=0: */
