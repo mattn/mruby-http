@@ -132,6 +132,9 @@ parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
   if(!context->was_header_value) {
     PARSER_SET(context, "last_header_value", mrb_str_new(mrb, at, len));
     context->was_header_value = TRUE;
+    mrb_hash_set(mrb, PARSER_GET(context, "headers"),
+        PARSER_GET(context, "last_header_field"),
+        PARSER_GET(context, "last_header_value"));
   } else {
     mrb_str_concat(mrb, PARSER_GET(context, "last_header_value"), mrb_str_new(mrb, at, len));
   }
@@ -175,6 +178,10 @@ parser_settings_on_message_complete(http_parser* parser)
   mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
   mrb_value args[1];
+
+  if (mrb_nil_p(context->proc)) {
+    return 0;
+  }
 
   if (context->type == HTTP_REQUEST)
     c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
@@ -241,17 +248,31 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   context->settings.on_header_value = parser_settings_on_header_value;
   context->settings.on_headers_complete = parser_settings_on_headers_complete;
   context->settings.on_body = parser_settings_on_body;
+  context->settings.on_message_complete = parser_settings_on_message_complete;
+
+  char* data = RSTRING_PTR(arg_data);
+  size_t len = RSTRING_LEN(arg_data);
+  size_t done = http_parser_execute(&context->parser, &context->settings, data, len);
   if (!mrb_nil_p(b)) {
-    context->settings.on_message_complete = parser_settings_on_message_complete;
+    return mrb_nil_value();
   }
 
-  if (RSTRING_LEN(arg_data) > 0) {
-    char* data = RSTRING_PTR(arg_data);
-    size_t len = RSTRING_LEN(arg_data);
-    http_parser_execute(&context->parser, &context->settings, data, len);
-  }
+  mrb_value c;
+  mrb_http_parser_context *new_context;
 
-  return mrb_nil_value();
+  if (type == HTTP_REQUEST)
+    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
+  else
+    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_response);
+  new_context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
+  memcpy(new_context, context, sizeof(mrb_http_parser_context));
+  mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
+    Data_Wrap_Struct(mrb, mrb->object_class,
+    &http_object_type, (void*) new_context)));
+  if (done < len) {
+    PARSER_SET(new_context, "body", mrb_str_new(mrb, RSTRING_PTR(arg_data) + done, len - done));
+  }
+  return c;
 }
 
 static mrb_value
