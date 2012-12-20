@@ -43,7 +43,6 @@ typedef struct {
   struct http_parser_url handle;
   struct http_parser_settings settings;
   int was_header_value;
-  mrb_value proc;
   mrb_value instance;
 } mrb_http_parser_context;
 
@@ -95,11 +94,14 @@ parser_settings_on_url(http_parser* parser, const char *at, size_t len)
   return 0;
 }
 
-#define PARSER_GET(ctx, name) \
-  mrb_iv_get(ctx->mrb, ctx->instance, mrb_intern(ctx->mrb, name))
+#define OBJECT_GET(mrb, instance, name) \
+  mrb_iv_get(mrb, instance, mrb_intern(mrb, name))
 
-#define PARSER_SET(ctx, name, value) \
-  mrb_iv_set(ctx->mrb, ctx->instance, mrb_intern(ctx->mrb, name), value)
+#define OBJECT_SET(mrb, instance, name, value) \
+  mrb_iv_set(mrb, instance, mrb_intern(mrb, name), value)
+
+#define OBJECT_REMOVE(mrb, instance, name) \
+  mrb_iv_remove(mrb, instance, mrb_intern(mrb, name))
 
 static int
 parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
@@ -109,14 +111,14 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
 
   ARENA_SAVE;
   if (context->was_header_value) {
-    if (!mrb_nil_p(PARSER_GET(context, "last_header_field"))) {
-      mrb_str_concat(mrb, PARSER_GET(context, "last_header_field"), PARSER_GET(context, "last_header_value"));
-      PARSER_SET(context, "last_header_value", mrb_nil_value());
+    if (!mrb_nil_p(OBJECT_GET(mrb, context->instance, "last_header_field"))) {
+      mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_field"), OBJECT_GET(mrb, context->instance, "last_header_value"));
+      OBJECT_SET(mrb, context->instance, "last_header_value", mrb_nil_value());
     }
-    PARSER_SET(context, "last_header_field", mrb_str_new(mrb, at, len));
+    OBJECT_SET(mrb, context->instance, "last_header_field", mrb_str_new(mrb, at, len));
     context->was_header_value = FALSE;
   } else {
-    mrb_str_concat(mrb, PARSER_GET(context, "last_header_field"), mrb_str_new(mrb, at, len));
+    mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_field"), mrb_str_new(mrb, at, len));
   }
   ARENA_RESTORE;
   return 0;
@@ -130,13 +132,13 @@ parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
 
   ARENA_SAVE;
   if(!context->was_header_value) {
-    PARSER_SET(context, "last_header_value", mrb_str_new(mrb, at, len));
+    OBJECT_SET(mrb, context->instance, "last_header_value", mrb_str_new(mrb, at, len));
     context->was_header_value = TRUE;
-    mrb_hash_set(mrb, PARSER_GET(context, "headers"),
-        PARSER_GET(context, "last_header_field"),
-        PARSER_GET(context, "last_header_value"));
+    mrb_hash_set(mrb, OBJECT_GET(mrb, context->instance, "headers"),
+        OBJECT_GET(mrb, context->instance, "last_header_field"),
+        OBJECT_GET(mrb, context->instance, "last_header_value"));
   } else {
-    mrb_str_concat(mrb, PARSER_GET(context, "last_header_value"), mrb_str_new(mrb, at, len));
+    mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_value"), mrb_str_new(mrb, at, len));
   }
   ARENA_RESTORE;
   return 0;
@@ -149,10 +151,10 @@ parser_settings_on_headers_complete(http_parser* parser)
   mrb_state* mrb = context->mrb;
 
   ARENA_SAVE;
-  if(!mrb_nil_p(PARSER_GET(context, "last_header_field"))) {
-    mrb_hash_set(mrb, PARSER_GET(context, "headers"),
-        PARSER_GET(context, "last_header_field"),
-        PARSER_GET(context, "last_header_value"));
+  if(!mrb_nil_p(OBJECT_GET(mrb, context->instance, "last_header_field"))) {
+    mrb_hash_set(mrb, OBJECT_GET(mrb, context->instance, "headers"),
+        OBJECT_GET(mrb, context->instance, "last_header_field"),
+        OBJECT_GET(mrb, context->instance, "last_header_value"));
   }
   ARENA_RESTORE;
   return 0;
@@ -165,7 +167,7 @@ parser_settings_on_body(http_parser *parser, const char *p, size_t len)
   mrb_state* mrb = context->mrb;
 
   ARENA_SAVE;
-  PARSER_SET(context, "body", mrb_str_new(mrb, p, len));
+  OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, p, len));
   ARENA_RESTORE;
   return 0;
 }
@@ -173,31 +175,40 @@ parser_settings_on_body(http_parser *parser, const char *p, size_t len)
 static int
 parser_settings_on_message_complete(http_parser* parser)
 {
-  mrb_value c;
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
-  mrb_http_parser_context *new_context;
   mrb_state* mrb = context->mrb;
-  mrb_value args[1];
 
-  if (mrb_nil_p(context->proc)) {
-    return 0;
+  if (context->handle.field_set & (1<<UF_SCHEMA)) {
+    OBJECT_SET(mrb, context->instance, "schema", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len));
   }
-
-  if (context->type == HTTP_REQUEST)
-    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
-  else
-    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_response);
-  new_context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
-  memcpy(new_context, context, sizeof(mrb_http_parser_context));
-  mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
-    Data_Wrap_Struct(mrb, mrb->object_class,
-    &http_object_type, (void*) new_context)));
-  args[0] = c;
-  mrb_yield_argv(context->mrb, context->proc, 1, args);
-  PARSER_SET(context, "headers", mrb_nil_value());
-  PARSER_SET(context, "last_header_field", mrb_nil_value());
-  PARSER_SET(context, "last_header_value", mrb_nil_value());
-  PARSER_SET(context, "buf", mrb_nil_value());
+  if (context->handle.field_set & (1<<UF_HOST)) {
+    OBJECT_SET(mrb, context->instance, "host", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len));
+  }
+  if (context->handle.field_set & (1<<UF_HOST)) {
+    OBJECT_SET(mrb, context->instance, "host", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len));
+  }
+  if (context->handle.field_set & (1<<UF_PORT)) {
+    OBJECT_SET(mrb, context->instance, "port", mrb_fixnum_value(context->handle.port));
+  } else {
+    if (context->handle.field_set & (1<<UF_SCHEMA)) {
+      mrb_value schema = mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len);
+      if (!mrb_nil_p(schema) && !strcmp("https", (char*) RSTRING_PTR(schema))) {
+        OBJECT_SET(mrb, context->instance, "port", mrb_fixnum_value(443));
+      }
+    }
+  }
+  if (context->handle.field_set & (1<<UF_PATH)) {
+    OBJECT_SET(mrb, context->instance, "path", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_PATH].off, context->handle.field_data[UF_PATH].len));
+  }
+  if (context->handle.field_set & (1<<UF_QUERY)) {
+    OBJECT_SET(mrb, context->instance, "query", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len));
+  }
+  OBJECT_SET(mrb, context->instance, "method", mrb_str_new_cstr(mrb, http_method_str(context->parser.method)));
+  OBJECT_SET(mrb, context->instance, "status_code", mrb_fixnum_value(context->parser.status_code));
+  OBJECT_SET(mrb, context->instance, "content_length", mrb_fixnum_value(context->parser.content_length));
+  OBJECT_REMOVE(mrb, context->instance, "last_header_field");
+  OBJECT_REMOVE(mrb, context->instance, "last_header_value");
+  OBJECT_REMOVE(mrb, context->instance, "buf");
 
   return 0;
 }
@@ -210,7 +221,7 @@ mrb_http_parser_init(mrb_state *mrb, mrb_value self)
   context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
   memset(context, 0, sizeof(mrb_http_parser_context));
   context->mrb = mrb;
-  context->instance = self;
+  context->instance = mrb_nil_value();
   mrb_iv_set(mrb, self, mrb_intern(mrb, "context"), mrb_obj_value(
     Data_Wrap_Struct(mrb, mrb->object_class,
     &http_parser_context_type, (void*) context)));
@@ -235,10 +246,12 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   if (mrb_nil_p(arg_data)) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
-  context->proc = b;
   context->parser.data = context;
+  if (type == HTTP_REQUEST)
+    context->instance = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
+  else
+    context->instance = mrb_class_new_instance(mrb, 0, NULL, _class_http_response);
   context->was_header_value = TRUE;
-  PARSER_SET(context, "headers", mrb_hash_new(mrb));
 
   http_parser_init(&context->parser, type);
 
@@ -252,27 +265,34 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
 
   char* data = RSTRING_PTR(arg_data);
   size_t len = RSTRING_LEN(arg_data);
+
+  char* eol = strpbrk(data, "\r\n");
+  if (eol) {
+  }
+
+RETRY:
+  if (len > 10 && !strncmp(data+9, "200 Connection established\r\n", 28) ||
+      !strncmp(data+9, "100 Continue\r\n", 14) || *(data+9) == '3') {
+    char* next = strstr(data, "\r\n\r\n");
+    if (next) {
+      len -= (next + 4 - data);
+      data = next + 4;
+      goto RETRY;
+    }
+  }
+
   size_t done = http_parser_execute(&context->parser, &context->settings, data, len);
+  if (done < len) {
+    OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, data + done, len - done));
+  }
+
   if (!mrb_nil_p(b)) {
+    mrb_value args[1];
+    args[0] = context->instance;
+    mrb_yield_argv(mrb, b, 1, args);
     return mrb_nil_value();
   }
-
-  mrb_value c;
-  mrb_http_parser_context *new_context;
-
-  if (type == HTTP_REQUEST)
-    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
-  else
-    c = mrb_class_new_instance(mrb, 0, NULL, _class_http_response);
-  new_context = (mrb_http_parser_context*) malloc(sizeof(mrb_http_parser_context));
-  memcpy(new_context, context, sizeof(mrb_http_parser_context));
-  mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
-    Data_Wrap_Struct(mrb, mrb->object_class,
-    &http_object_type, (void*) new_context)));
-  if (done < len) {
-    PARSER_SET(new_context, "body", mrb_str_new(mrb, RSTRING_PTR(arg_data) + done, len - done));
-  }
-  return c;
+  return context->instance;
 }
 
 static mrb_value
@@ -305,9 +325,9 @@ mrb_http_parser_execute(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
-  http_parser_execute(&context->parser, &context->settings, (char*) RSTRING_PTR(arg_data), RSTRING_CAPA(arg_data));
+  size_t done = http_parser_execute(&context->parser, &context->settings, (char*) RSTRING_PTR(arg_data), RSTRING_CAPA(arg_data));
 
-  return mrb_nil_value();
+  return mrb_fixnum_value(done);
 }
 
 static mrb_value
@@ -332,176 +352,103 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
   return c;
 }
 
-static mrb_value
-mrb_http_data_get(mrb_state *mrb, mrb_value self)
-{
-  return mrb_iv_get(mrb, self, mrb_intern(mrb, "data"));
-}
-
-static mrb_value
-mrb_http_data_set(mrb_state *mrb, mrb_value self)
-{
-  mrb_value arg;
-  mrb_get_args(mrb, "o", &arg);
-  mrb_iv_set(mrb, self, mrb_intern(mrb, "data"), arg);
-  return mrb_nil_value();
-}
-
 /*********************************************************
- * request
+ * object
  *********************************************************/
 
 static mrb_value
-mrb_http_object_schema(mrb_state *mrb, mrb_value self)
+mrb_http_object_initialize(mrb_state *mrb, mrb_value self)
 {
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->handle.field_set & (1<<UF_SCHEMA)) {
-    return mrb_str_substr(mrb, PARSER_GET(context, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len);
-  }
-  return mrb_nil_value();
-}
-
-
-static mrb_value
-mrb_http_object_host(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->handle.field_set & (1<<UF_HOST)) {
-    return mrb_str_substr(mrb, PARSER_GET(context, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len);
-  }
-  return mrb_nil_value();
+  OBJECT_SET(mrb, self, "headers", mrb_hash_new(mrb));
+  OBJECT_SET(mrb, self, "body", mrb_nil_value());
+  OBJECT_SET(mrb, self, "method", mrb_str_new_cstr(mrb, "GET"));
+  return self;
 }
 
 static mrb_value
-mrb_http_object_port(mrb_state *mrb, mrb_value self)
+mrb_http_object_status_code_get(mrb_state *mrb, mrb_value self)
 {
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->handle.field_set & (1<<UF_PORT)) {
-    return mrb_fixnum_value(context->handle.port);
-  }
-  mrb_value schema = mrb_http_object_schema(mrb, self);
-  if (!mrb_nil_p(schema) && !strcmp("https", (char*) RSTRING_PTR(schema))) {
-    return mrb_fixnum_value(443);
-  }
-  return mrb_fixnum_value(80);
+  return OBJECT_GET(mrb, self, "status_code");
 }
 
 static mrb_value
-mrb_http_object_path(mrb_state *mrb, mrb_value self)
+mrb_http_object_content_length_get(mrb_state *mrb, mrb_value self)
 {
-  mrb_value value_context;
-  mrb_http_parser_context* context;
+  return OBJECT_GET(mrb, self, "content_length");
+}
 
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->handle.field_set & (1<<UF_PATH)) {
-    return mrb_str_substr(mrb, PARSER_GET(context, "buf"), context->handle.field_data[UF_PATH].off, context->handle.field_data[UF_PATH].len);
-  }
+static mrb_value
+mrb_http_object_schema_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "schema");
+}
+
+static mrb_value
+mrb_http_object_host_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "host");
+}
+
+static mrb_value
+mrb_http_object_port_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "port");
+}
+
+static mrb_value
+mrb_http_object_path_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "path");
+}
+
+static mrb_value
+mrb_http_object_query_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "query");
+}
+
+static mrb_value
+mrb_http_object_headers_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "headers");
+}
+
+static mrb_value
+mrb_http_object_headers_set_item(mrb_state *mrb, mrb_value self)
+{
+  mrb_value key, value;
+  mrb_get_args(mrb, "SS", &key, &value);
+  mrb_hash_set(mrb, OBJECT_GET(mrb, self, "headers"), key, value);
   return mrb_nil_value();
 }
 
 static mrb_value
-mrb_http_object_query(mrb_state *mrb, mrb_value self)
+mrb_http_object_method_get(mrb_state *mrb, mrb_value self)
 {
-  mrb_value value_context;
-  mrb_http_parser_context* context;
+  return OBJECT_GET(mrb, self, "method");
+}
 
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->handle.field_set & (1<<UF_QUERY)) {
-    return mrb_str_substr(mrb, PARSER_GET(context, "buf"), context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len);
-  }
+static mrb_value
+mrb_http_object_method_set(mrb_state *mrb, mrb_value self)
+{
+  mrb_value arg;
+  mrb_get_args(mrb, "S", &arg);
+  OBJECT_SET(mrb, self, "method", arg);
   return mrb_nil_value();
-}
-
-static mrb_value
-mrb_http_object_headers(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  return PARSER_GET(context, "headers");
-}
-
-static mrb_value
-mrb_http_object_method(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-  const char* method;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  method = http_method_str(context->parser.method);
-  ARENA_SAVE;
-  mrb_value str = mrb_str_new(mrb, method, strlen(method));
-  ARENA_RESTORE;
-  return str;
 }
 
 static mrb_value
 mrb_http_object_body_get(mrb_state *mrb, mrb_value self)
 {
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  return PARSER_GET(context, "body");
+  return OBJECT_GET(mrb, self, "body");
 }
 
 static mrb_value
 mrb_http_object_body_set(mrb_state *mrb, mrb_value self)
 {
-  mrb_value value_context;
-  mrb_http_parser_context* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_object_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
   mrb_value arg;
-  mrb_get_args(mrb, "o", &arg);
-  PARSER_SET(context, "body", arg);
+  mrb_get_args(mrb, "S", &arg);
+  OBJECT_SET(mrb, self, "body", arg);
   return mrb_nil_value();
 }
 
@@ -711,21 +658,34 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_parser, "parse_response", mrb_http_parser_parse_response, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_url", mrb_http_parser_parse_url, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_parser, "execute", mrb_http_parser_execute, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_parser, "data=", mrb_http_data_set, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_parser, "data", mrb_http_data_get, ARGS_NONE());
 
   _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
-  mrb_define_method(mrb, _class_http_request, "schema", mrb_http_object_schema, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "host", mrb_http_object_host, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "port", mrb_http_object_port, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "path", mrb_http_object_path, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "query", mrb_http_object_query, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "headers", mrb_http_object_headers, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "method", mrb_http_object_method, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "data=", mrb_http_data_set, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_request, "data", mrb_http_data_get, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_request, "initialize", mrb_http_object_initialize, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "schema", mrb_http_object_schema_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "host", mrb_http_object_host_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "port", mrb_http_object_port_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "path", mrb_http_object_path_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "query", mrb_http_object_query_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "headers", mrb_http_object_headers_get, ARGS_NONE());
+  //mrb_define_method(mrb, _class_http_request, "headers[]=", mrb_http_object_headers_set_item, ARGS_REQ(2));
+  mrb_define_method(mrb, _class_http_request, "method", mrb_http_object_method_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "method=", mrb_http_object_method_set, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
+
+  _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
+  mrb_define_method(mrb, _class_http_response, "initialize", mrb_http_object_initialize, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "status_code", mrb_http_object_status_code_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "content_length", mrb_http_object_content_length_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "schema", mrb_http_object_schema_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "host", mrb_http_object_host_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "port", mrb_http_object_port_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "path", mrb_http_object_path_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "query", mrb_http_object_query_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "headers", mrb_http_object_headers_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "method", mrb_http_object_method_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "body", mrb_http_object_body_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
 
   _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
   mrb_define_method(mrb, _class_http_url, "schema", mrb_http_url_schema, ARGS_NONE());
@@ -736,19 +696,6 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_url, "fragment", mrb_http_url_fragment, ARGS_NONE());
   mrb_define_class_method(mrb, _class_http_url, "encode", mrb_http_url_encode, ARGS_REQ(1));
   mrb_define_class_method(mrb, _class_http_url, "decode", mrb_http_url_decode, ARGS_REQ(1));
-
-  _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
-  mrb_define_method(mrb, _class_http_response, "schema", mrb_http_object_schema, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "host", mrb_http_object_host, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "port", mrb_http_object_port, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "path", mrb_http_object_path, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "query", mrb_http_object_query, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "headers", mrb_http_object_headers, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "method", mrb_http_object_method, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "data=", mrb_http_data_set, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_response, "data", mrb_http_data_get, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
-  mrb_define_method(mrb, _class_http_response, "body", mrb_http_object_body_get, ARGS_NONE());
 }
 
 /* vim:set et ts=2 sts=2 sw=2 tw=0: */
