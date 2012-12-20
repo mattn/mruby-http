@@ -58,17 +58,6 @@ http_parser_context_type = {
 };
 
 static void
-http_object_free(mrb_state *mrb, void *p)
-{
-  free(p);
-}
-
-static const struct mrb_data_type
-http_object_type = {
-  "mrb_http_object", http_object_free,
-};
-
-static void
 http_url_free(mrb_state *mrb, void *p)
 {
   free(p);
@@ -177,38 +166,39 @@ parser_settings_on_message_complete(http_parser* parser)
 {
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
+  mrb_value c = context->instance;
 
   if (context->handle.field_set & (1<<UF_SCHEMA)) {
-    OBJECT_SET(mrb, context->instance, "schema", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len));
+    OBJECT_SET(mrb, c, "schema", mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len));
   }
   if (context->handle.field_set & (1<<UF_HOST)) {
-    OBJECT_SET(mrb, context->instance, "host", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len));
+    OBJECT_SET(mrb, c, "host", mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len));
   }
   if (context->handle.field_set & (1<<UF_HOST)) {
-    OBJECT_SET(mrb, context->instance, "host", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len));
+    OBJECT_SET(mrb, c, "host", mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_HOST].off, context->handle.field_data[UF_HOST].len));
   }
   if (context->handle.field_set & (1<<UF_PORT)) {
-    OBJECT_SET(mrb, context->instance, "port", mrb_fixnum_value(context->handle.port));
+    OBJECT_SET(mrb, c, "port", mrb_fixnum_value(context->handle.port));
   } else {
     if (context->handle.field_set & (1<<UF_SCHEMA)) {
-      mrb_value schema = mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len);
+      mrb_value schema = mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_SCHEMA].off, context->handle.field_data[UF_SCHEMA].len);
       if (!mrb_nil_p(schema) && !strcmp("https", (char*) RSTRING_PTR(schema))) {
-        OBJECT_SET(mrb, context->instance, "port", mrb_fixnum_value(443));
+        OBJECT_SET(mrb, c, "port", mrb_fixnum_value(443));
       }
     }
   }
   if (context->handle.field_set & (1<<UF_PATH)) {
-    OBJECT_SET(mrb, context->instance, "path", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_PATH].off, context->handle.field_data[UF_PATH].len));
+    OBJECT_SET(mrb, c, "path", mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_PATH].off, context->handle.field_data[UF_PATH].len));
   }
   if (context->handle.field_set & (1<<UF_QUERY)) {
-    OBJECT_SET(mrb, context->instance, "query", mrb_str_substr(mrb, OBJECT_GET(mrb, context->instance, "buf"), context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len));
+    OBJECT_SET(mrb, c, "query", mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len));
   }
-  OBJECT_SET(mrb, context->instance, "method", mrb_str_new_cstr(mrb, http_method_str(context->parser.method)));
-  OBJECT_SET(mrb, context->instance, "status_code", mrb_fixnum_value(context->parser.status_code));
-  OBJECT_SET(mrb, context->instance, "content_length", mrb_fixnum_value(context->parser.content_length));
-  OBJECT_REMOVE(mrb, context->instance, "last_header_field");
-  OBJECT_REMOVE(mrb, context->instance, "last_header_value");
-  OBJECT_REMOVE(mrb, context->instance, "buf");
+  OBJECT_SET(mrb, c, "method", mrb_str_new_cstr(mrb, http_method_str(context->parser.method)));
+  OBJECT_SET(mrb, c, "status_code", mrb_fixnum_value(context->parser.status_code));
+  OBJECT_SET(mrb, c, "content_length", mrb_fixnum_value(context->parser.content_length));
+  OBJECT_REMOVE(mrb, c, "last_header_field");
+  OBJECT_REMOVE(mrb, c, "last_header_value");
+  OBJECT_REMOVE(mrb, c, "buf");
 
   return 0;
 }
@@ -271,8 +261,8 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   }
 
 RETRY:
-  if (len > 10 && !strncmp(data+9, "200 Connection established\r\n", 28) ||
-      !strncmp(data+9, "100 Continue\r\n", 14) || *(data+9) == '3') {
+  if (len > 10 && (!strncmp(data+9, "200 Connection established\r\n", 28) ||
+      !strncmp(data+9, "100 Continue\r\n", 14) || *(data+9) == '3')) {
     char* next = strstr(data, "\r\n\r\n");
     if (next) {
       len -= (next + 4 - data);
@@ -335,19 +325,44 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
 {
   mrb_value c;
   mrb_value arg_data;
-  struct http_parser_url *context = NULL;
+  struct http_parser_url handle = {0};
 
-  mrb_get_args(mrb, "o", &arg_data);
+  mrb_get_args(mrb, "S", &arg_data);
 
-  context = (struct http_parser_url*) malloc(sizeof(struct http_parser_url));
-  memset(context, 0, sizeof(struct http_parser_url));
-  http_parser_parse_url(RSTRING_PTR(arg_data), RSTRING_LEN(arg_data), FALSE, context);
+  if (http_parser_parse_url(RSTRING_PTR(arg_data), RSTRING_LEN(arg_data), FALSE, &handle)) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid URL");
+  }
 
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_url);
-  mrb_iv_set(mrb, c, mrb_intern(mrb, "context"), mrb_obj_value(
-    Data_Wrap_Struct(mrb, mrb->object_class,
-    &http_url_type, (void*) context)));
-  mrb_iv_set(mrb, c, mrb_intern(mrb, "buf"), arg_data);
+
+  if (handle.field_set & (1<<UF_SCHEMA)) {
+    OBJECT_SET(mrb, c, "schema", mrb_str_substr(mrb, arg_data, handle.field_data[UF_SCHEMA].off, handle.field_data[UF_SCHEMA].len));
+  }
+  if (handle.field_set & (1<<UF_HOST)) {
+    OBJECT_SET(mrb, c, "host", mrb_str_substr(mrb, arg_data, handle.field_data[UF_HOST].off, handle.field_data[UF_HOST].len));
+  }
+  if (handle.field_set & (1<<UF_HOST)) {
+    OBJECT_SET(mrb, c, "host", mrb_str_substr(mrb, arg_data, handle.field_data[UF_HOST].off, handle.field_data[UF_HOST].len));
+  }
+  if (handle.field_set & (1<<UF_PORT)) {
+    OBJECT_SET(mrb, c, "port", mrb_fixnum_value(handle.port));
+  } else {
+    if (handle.field_set & (1<<UF_SCHEMA)) {
+      mrb_value schema = mrb_str_substr(mrb, arg_data, handle.field_data[UF_SCHEMA].off, handle.field_data[UF_SCHEMA].len);
+      if (!mrb_nil_p(schema) && !strcmp("https", (char*) RSTRING_PTR(schema))) {
+        OBJECT_SET(mrb, c, "port", mrb_fixnum_value(443));
+      }
+    }
+  }
+  if (handle.field_set & (1<<UF_PATH)) {
+    OBJECT_SET(mrb, c, "path", mrb_str_substr(mrb, arg_data, handle.field_data[UF_PATH].off, handle.field_data[UF_PATH].len));
+  }
+  if (handle.field_set & (1<<UF_QUERY)) {
+    OBJECT_SET(mrb, c, "query", mrb_str_substr(mrb, arg_data, handle.field_data[UF_QUERY].off, handle.field_data[UF_QUERY].len));
+  }
+  if (handle.field_set & (1<<UF_FRAGMENT)) {
+    OBJECT_SET(mrb, c, "fragment", mrb_str_substr(mrb, arg_data, handle.field_data[UF_FRAGMENT].off, handle.field_data[UF_FRAGMENT].len));
+  }
 
   return c;
 }
@@ -408,6 +423,12 @@ mrb_http_object_query_get(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
+mrb_http_object_fragment_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "fragment");
+}
+
+static mrb_value
 mrb_http_object_headers_get(mrb_state *mrb, mrb_value self)
 {
   return OBJECT_GET(mrb, self, "headers");
@@ -459,116 +480,6 @@ mrb_http_object_body_set(mrb_state *mrb, mrb_value self)
 /*********************************************************
  * url
  *********************************************************/
-
-#define URL_GET(mrb, self, name) \
-  mrb_iv_get(mrb, self, mrb_intern(mrb, name))
-
-static mrb_value
-mrb_http_url_schema(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  struct http_parser_url* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_url_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->field_set & (1<<UF_SCHEMA)) {
-    return mrb_str_substr(mrb, URL_GET(mrb, self, "buf"), context->field_data[UF_SCHEMA].off, context->field_data[UF_SCHEMA].len);
-  }
-  return mrb_nil_value();
-}
-
-
-static mrb_value
-mrb_http_url_host(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  struct http_parser_url* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_url_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->field_set & (1<<UF_HOST)) {
-    return mrb_str_substr(mrb, URL_GET(mrb, self, "buf"), context->field_data[UF_HOST].off, context->field_data[UF_HOST].len);
-  }
-  return mrb_nil_value();
-}
-
-static mrb_value
-mrb_http_url_port(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  struct http_parser_url* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_url_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->field_set & (1<<UF_PORT)) {
-    return mrb_fixnum_value(context->port);
-  }
-  mrb_value schema = mrb_http_url_schema(mrb, self);
-  if (!mrb_nil_p(schema) && !strcmp("https", (char*) RSTRING_PTR(schema))) {
-    return mrb_fixnum_value(443);
-  }
-  return mrb_fixnum_value(80);
-}
-
-static mrb_value
-mrb_http_url_path(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  struct http_parser_url* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_url_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->field_set & (1<<UF_PATH)) {
-    return mrb_str_substr(mrb, URL_GET(mrb, self, "buf"), context->field_data[UF_PATH].off, context->field_data[UF_PATH].len);
-  }
-  return mrb_nil_value();
-}
-
-static mrb_value
-mrb_http_url_query(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  struct http_parser_url* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_url_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->field_set & (1<<UF_QUERY)) {
-    return mrb_str_substr(mrb, URL_GET(mrb, self, "buf"), context->field_data[UF_QUERY].off, context->field_data[UF_QUERY].len);
-  }
-  return mrb_nil_value();
-}
-
-static mrb_value
-mrb_http_url_fragment(mrb_state *mrb, mrb_value self)
-{
-  mrb_value value_context;
-  struct http_parser_url* context;
-
-  value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
-  Data_Get_Struct(mrb, value_context, &http_url_type, context);
-  if (!context) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
-  }
-  if (context->field_set & (1<<UF_FRAGMENT)) {
-    return mrb_str_substr(mrb, URL_GET(mrb, self, "buf"), context->field_data[UF_FRAGMENT].off, context->field_data[UF_FRAGMENT].len);
-  }
-  return mrb_nil_value();
-}
 
 static char
 from_hex(char ch) {
@@ -688,12 +599,13 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
 
   _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
-  mrb_define_method(mrb, _class_http_url, "schema", mrb_http_url_schema, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_url, "host", mrb_http_url_host, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_url, "port", mrb_http_url_port, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_url, "path", mrb_http_url_path, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_url, "query", mrb_http_url_query, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_url, "fragment", mrb_http_url_fragment, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_url, "schema", mrb_http_object_schema_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_url, "host", mrb_http_object_host_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_url, "port", mrb_http_object_port_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_url, "path", mrb_http_object_path_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_url, "query", mrb_http_object_query_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_url, "fragment", mrb_http_object_fragment_get, ARGS_NONE());
+  //mrb_define_method(mrb, _class_http_url, "to_url", mrb_http_url_to_url, ARGS_NONE());
   mrb_define_class_method(mrb, _class_http_url, "encode", mrb_http_url_encode, ARGS_REQ(1));
   mrb_define_class_method(mrb, _class_http_url, "decode", mrb_http_url_decode, ARGS_REQ(1));
 }
