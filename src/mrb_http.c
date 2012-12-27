@@ -315,7 +315,7 @@ mrb_http_parser_execute(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
-  size_t done = http_parser_execute(&context->parser, &context->settings, (char*) RSTRING_PTR(arg_data), RSTRING_CAPA(arg_data));
+  size_t done = http_parser_execute(&context->parser, &context->settings, (char*) RSTRING_PTR(arg_data), RSTRING_LEN(arg_data));
 
   return mrb_fixnum_value(done);
 }
