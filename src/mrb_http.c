@@ -387,6 +387,57 @@ mrb_http_object_status_code_get(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
+mrb_http_object_message_get(mrb_state *mrb, mrb_value self)
+{
+  const char* message = NULL;
+  switch(mrb_fixnum(OBJECT_GET(mrb, self, "status_code"))) {
+    case 100: message = "Continue"; break;
+    case 101: message = "Switching Protocols"; break;
+    case 200: message = "OK"; break;
+    case 201: message = "Created"; break;
+    case 202: message = "Accepted"; break;
+    case 203: message = "Non-Authoritative Information"; break;
+    case 204: message = "No Content"; break;
+    case 205: message = "Reset Content"; break;
+    case 206: message = "Partial Content"; break;
+    case 300: message = "Multiple Choices"; break;
+    case 301: message = "Moved Permanently"; break;
+    case 302: message = "Found"; break;
+    case 303: message = "See Other"; break;
+    case 304: message = "Not Modified"; break;
+    case 305: message = "Use Proxy"; break;
+              //case 306: message = "(reserved)"; break;
+    case 307: message = "Temporary Redirect"; break;
+    case 400: message = "Bad Request"; break;
+    case 401: message = "Unauthorized"; break;
+    case 402: message = "Payment Required"; break;
+    case 403: message = "Forbidden"; break;
+    case 404: message = "Not Found"; break;
+    case 405: message = "Method Not Allowed"; break;
+    case 406: message = "Not Acceptable"; break;
+    case 407: message = "Proxy Authentication Required"; break;
+    case 408: message = "Request Timeout"; break;
+    case 409: message = "Conflict"; break;
+    case 410: message = "Gone"; break;
+    case 411: message = "Length Required"; break;
+    case 412: message = "Precondition Failed"; break;
+    case 413: message = "Request Entity Too Large"; break;
+    case 414: message = "Request-URI Too Long"; break;
+    case 415: message = "Unsupported Media Type"; break;
+    case 416: message = "Requested Range Not Satisfiable"; break;
+    case 417: message = "Expectation Failed"; break;
+    case 500: message = "Internal Server Error"; break;
+    case 501: message = "Not Implemented"; break;
+    case 502: message = "Bad Gateway"; break;
+    case 503: message = "Service Unavailable"; break;
+    case 504: message = "Gateway Timeout"; break;
+    case 505: message = "HTTP Version Not Supported"; break;
+    default: mrb_raise(mrb, E_RUNTIME_ERROR, "Not supported status code.");
+  }
+  return mrb_str_new_cstr(mrb, message);
+}
+
+static mrb_value
 mrb_http_object_content_length_get(mrb_state *mrb, mrb_value self)
 {
   return OBJECT_GET(mrb, self, "content_length");
@@ -587,6 +638,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
   mrb_define_method(mrb, _class_http_response, "initialize", mrb_http_object_initialize, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "status_code", mrb_http_object_status_code_get, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_response, "message", mrb_http_object_message_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "content_length", mrb_http_object_content_length_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "schema", mrb_http_object_schema_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "host", mrb_http_object_host_get, ARGS_NONE());
