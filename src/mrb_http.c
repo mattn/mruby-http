@@ -614,12 +614,14 @@ void
 mrb_mruby_http_gem_init(mrb_state* mrb) {
   _class_http = mrb_define_module(mrb, "HTTP");
 
+  ARENA_SAVE;
   _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
   mrb_define_method(mrb, _class_http_parser, "initialize", mrb_http_parser_init, ARGS_OPT(1));
   mrb_define_method(mrb, _class_http_parser, "parse_request", mrb_http_parser_parse_request, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_response", mrb_http_parser_parse_response, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_url", mrb_http_parser_parse_url, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_parser, "execute", mrb_http_parser_execute, ARGS_REQ(1));
+  ARENA_RESTORE;
 
   _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
   mrb_define_method(mrb, _class_http_request, "initialize", mrb_http_object_initialize, ARGS_NONE());
@@ -634,6 +636,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_request, "method=", mrb_http_object_method_set, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
+  ARENA_RESTORE;
 
   _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
   mrb_define_method(mrb, _class_http_response, "initialize", mrb_http_object_initialize, ARGS_NONE());
@@ -649,6 +652,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_response, "method", mrb_http_object_method_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body", mrb_http_object_body_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
+  ARENA_RESTORE;
 
   _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
   mrb_define_method(mrb, _class_http_url, "schema", mrb_http_object_schema_get, ARGS_NONE());
@@ -660,6 +664,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   //mrb_define_method(mrb, _class_http_url, "to_url", mrb_http_url_to_url, ARGS_NONE());
   mrb_define_class_method(mrb, _class_http_url, "encode", mrb_http_url_encode, ARGS_REQ(1));
   mrb_define_class_method(mrb, _class_http_url, "decode", mrb_http_url_decode, ARGS_REQ(1));
+  ARENA_RESTORE;
 }
 
 /* vim:set et ts=2 sts=2 sw=2 tw=0: */
