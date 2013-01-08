@@ -26,12 +26,6 @@
 #define MAX_HEADER_NAME_LEN 1024
 #define MAX_HEADERS         128
 
-static struct RClass *_class_http;
-static struct RClass *_class_http_parser;
-static struct RClass *_class_http_request;
-static struct RClass *_class_http_response;
-static struct RClass *_class_http_url;
-
 /*********************************************************
  * parser
  *********************************************************/
@@ -237,10 +231,16 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
   context->parser.data = context;
-  if (type == HTTP_REQUEST)
-    context->instance = mrb_class_new_instance(mrb, 0, NULL, _class_http_request);
-  else
-    context->instance = mrb_class_new_instance(mrb, 0, NULL, _class_http_response);
+
+  struct RClass* _class_http = mrb_class_get(mrb, "HTTP");
+  struct RClass* clazz;
+  if (type == HTTP_REQUEST) {
+    clazz = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "Request")));
+    context->instance = mrb_class_new_instance(mrb, 0, NULL, clazz);
+  } else {
+    clazz = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "Response")));
+    context->instance = mrb_class_new_instance(mrb, 0, NULL, clazz);
+  }
   context->was_header_value = TRUE;
 
   http_parser_init(&context->parser, type);
@@ -333,6 +333,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid URL");
   }
 
+  struct RClass* _class_http_url = mrb_class_get(mrb, "HTTP");
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_url);
 
   if (handle.field_set & (1<<UF_SCHEMA)) {
@@ -612,10 +613,11 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
 
 void
 mrb_mruby_http_gem_init(mrb_state* mrb) {
-  _class_http = mrb_define_module(mrb, "HTTP");
 
   ARENA_SAVE;
-  _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
+
+  struct RClass* _class_http = mrb_define_module(mrb, "HTTP");
+  struct RClass* _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
   mrb_define_method(mrb, _class_http_parser, "initialize", mrb_http_parser_init, ARGS_OPT(1));
   mrb_define_method(mrb, _class_http_parser, "parse_request", mrb_http_parser_parse_request, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_response", mrb_http_parser_parse_response, ARGS_OPT(2));
@@ -623,7 +625,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_parser, "execute", mrb_http_parser_execute, ARGS_REQ(1));
   ARENA_RESTORE;
 
-  _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
+  struct RClass* _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
   mrb_define_method(mrb, _class_http_request, "initialize", mrb_http_object_initialize, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "schema", mrb_http_object_schema_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "host", mrb_http_object_host_get, ARGS_NONE());
@@ -638,7 +640,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
   ARENA_RESTORE;
 
-  _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
+  struct RClass* _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
   mrb_define_method(mrb, _class_http_response, "initialize", mrb_http_object_initialize, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "status_code", mrb_http_object_status_code_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "message", mrb_http_object_message_get, ARGS_NONE());
@@ -654,7 +656,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
   ARENA_RESTORE;
 
-  _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
+  struct RClass *_class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
   mrb_define_method(mrb, _class_http_url, "schema", mrb_http_object_schema_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_url, "host", mrb_http_object_host_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_url, "port", mrb_http_object_port_get, ARGS_NONE());
