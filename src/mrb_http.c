@@ -551,7 +551,7 @@ mrb_http_url_encode(mrb_state *mrb, mrb_value self) {
   char* str;
   char *pstr, *buf, *pbuf;
 
-  mrb_get_args(mrb, "o", &arg);
+  mrb_get_args(mrb, "S", &arg);
   str = RSTRING_PTR(arg);
 
   pstr = str;
@@ -582,7 +582,7 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
   char* str;
   char *pstr, *buf, *pbuf;
 
-  mrb_get_args(mrb, "o", &arg);
+  mrb_get_args(mrb, "S", &arg);
   str = RSTRING_PTR(arg);
 
   pstr = str;
