@@ -10,19 +10,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#if 1
-#define ARENA_SAVE \
-  int ai = mrb_gc_arena_save(mrb); \
-  if (ai == MRB_ARENA_SIZE) { \
-    mrb_raise(mrb, E_RUNTIME_ERROR, "arena overflow"); \
-  }
-#define ARENA_RESTORE \
-  mrb_gc_arena_restore(mrb, ai);
-#else
-#define ARENA_SAVE
-#define ARENA_RESTORE
-#endif
-
 #define MAX_HEADER_NAME_LEN 1024
 #define MAX_HEADERS         128
 
@@ -64,6 +51,7 @@ static const struct mrb_data_type http_url_type = {
 static int
 parser_settings_on_url(http_parser* parser, const char *at, size_t len)
 {
+  int ai;
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
@@ -71,9 +59,9 @@ parser_settings_on_url(http_parser* parser, const char *at, size_t len)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
-  ARENA_SAVE;
+  ai = mrb_gc_arena_save(mrb);
   mrb_iv_set(mrb, context->instance, mrb_intern(mrb, "buf"), mrb_str_new(mrb, at, len));
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
   return 0;
 }
 
@@ -92,7 +80,7 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
-  ARENA_SAVE;
+  int ai = mrb_gc_arena_save(mrb);
   if (context->was_header_value) {
     if (!mrb_nil_p(OBJECT_GET(mrb, context->instance, "last_header_field"))) {
       mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_field"), OBJECT_GET(mrb, context->instance, "last_header_value"));
@@ -103,7 +91,7 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
   } else {
     mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_field"), mrb_str_new(mrb, at, len));
   }
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
   return 0;
 }
 
@@ -113,7 +101,7 @@ parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
-  ARENA_SAVE;
+  int ai = mrb_gc_arena_save(mrb);
   if(!context->was_header_value) {
     OBJECT_SET(mrb, context->instance, "last_header_value", mrb_str_new(mrb, at, len));
     context->was_header_value = TRUE;
@@ -123,7 +111,7 @@ parser_settings_on_header_value(http_parser* parser, const char* at, size_t len)
   } else {
     mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_value"), mrb_str_new(mrb, at, len));
   }
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
   return 0;
 }
 
@@ -133,13 +121,13 @@ parser_settings_on_headers_complete(http_parser* parser)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
-  ARENA_SAVE;
+  int ai = mrb_gc_arena_save(mrb);
   if(!mrb_nil_p(OBJECT_GET(mrb, context->instance, "last_header_field"))) {
     mrb_hash_set(mrb, OBJECT_GET(mrb, context->instance, "headers"),
         OBJECT_GET(mrb, context->instance, "last_header_field"),
         OBJECT_GET(mrb, context->instance, "last_header_value"));
   }
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
   return 0;
 }
 
@@ -149,9 +137,9 @@ parser_settings_on_body(http_parser *parser, const char *p, size_t len)
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
 
-  ARENA_SAVE;
+  int ai = mrb_gc_arena_save(mrb);
   OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, p, len));
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
   return 0;
 }
 
@@ -219,6 +207,12 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   mrb_value value_context;
   mrb_http_parser_context* context;
   mrb_value b = mrb_nil_value();
+  struct RClass* _class_http;
+  struct RClass* clazz;
+  char* data;
+  size_t len;
+  char* eol;
+  size_t done;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
   Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
@@ -232,8 +226,7 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   }
   context->parser.data = context;
 
-  struct RClass* _class_http = mrb_class_get(mrb, "HTTP");
-  struct RClass* clazz;
+  _class_http = mrb_class_get(mrb, "HTTP");
   if (type == HTTP_REQUEST) {
     clazz = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "Request")));
     context->instance = mrb_class_new_instance(mrb, 0, NULL, clazz);
@@ -253,10 +246,10 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   context->settings.on_body = parser_settings_on_body;
   context->settings.on_message_complete = parser_settings_on_message_complete;
 
-  char* data = RSTRING_PTR(arg_data);
-  size_t len = RSTRING_LEN(arg_data);
+  data = RSTRING_PTR(arg_data);
+  len = RSTRING_LEN(arg_data);
 
-  char* eol = strpbrk(data, "\r\n");
+  eol = strpbrk(data, "\r\n");
   if (eol) {
   }
 
@@ -271,7 +264,7 @@ RETRY:
     }
   }
 
-  size_t done = http_parser_execute(&context->parser, &context->settings, data, len);
+  done = http_parser_execute(&context->parser, &context->settings, data, len);
   if (done < len) {
     OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, data + done, len - done));
   }
@@ -303,6 +296,7 @@ mrb_http_parser_execute(mrb_state *mrb, mrb_value self)
   mrb_value arg_data;
   mrb_value value_context;
   mrb_http_parser_context* context;
+  size_t done;
 
   value_context = mrb_iv_get(mrb, self, mrb_intern(mrb, "context"));
   Data_Get_Struct(mrb, value_context, &http_parser_context_type, context);
@@ -315,7 +309,7 @@ mrb_http_parser_execute(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
   }
 
-  size_t done = http_parser_execute(&context->parser, &context->settings, (char*) RSTRING_PTR(arg_data), RSTRING_LEN(arg_data));
+  done = http_parser_execute(&context->parser, &context->settings, (char*) RSTRING_PTR(arg_data), RSTRING_LEN(arg_data));
 
   return mrb_fixnum_value(done);
 }
@@ -326,6 +320,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
   mrb_value c;
   mrb_value arg_data;
   struct http_parser_url handle = {0};
+  struct RClass* _class_http_url;
 
   mrb_get_args(mrb, "S", &arg_data);
 
@@ -333,7 +328,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid URL");
   }
 
-  struct RClass* _class_http_url = mrb_class_get(mrb, "HTTP");
+  _class_http_url = mrb_class_get(mrb, "HTTP");
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_url);
 
   if (handle.field_set & (1<<UF_SCHEMA)) {
@@ -614,18 +609,23 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
 void
 mrb_mruby_http_gem_init(mrb_state* mrb) {
 
-  ARENA_SAVE;
+  struct RClass* _class_http;
+  struct RClass* _class_http_parser;
+  struct RClass* _class_http_request;
+  struct RClass* _class_http_response;
+  struct RClass *_class_http_url;
+  int ai = mrb_gc_arena_save(mrb);
 
-  struct RClass* _class_http = mrb_define_module(mrb, "HTTP");
-  struct RClass* _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
+  _class_http = mrb_define_module(mrb, "HTTP");
+  _class_http_parser = mrb_define_class_under(mrb, _class_http, "Parser", mrb->object_class);
   mrb_define_method(mrb, _class_http_parser, "initialize", mrb_http_parser_init, ARGS_OPT(1));
   mrb_define_method(mrb, _class_http_parser, "parse_request", mrb_http_parser_parse_request, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_response", mrb_http_parser_parse_response, ARGS_OPT(2));
   mrb_define_method(mrb, _class_http_parser, "parse_url", mrb_http_parser_parse_url, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_parser, "execute", mrb_http_parser_execute, ARGS_REQ(1));
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
 
-  struct RClass* _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
+  _class_http_request = mrb_define_class_under(mrb, _class_http, "Request", mrb->object_class);
   mrb_define_method(mrb, _class_http_request, "initialize", mrb_http_object_initialize, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "schema", mrb_http_object_schema_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "host", mrb_http_object_host_get, ARGS_NONE());
@@ -638,9 +638,9 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_request, "method=", mrb_http_object_method_set, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
 
-  struct RClass* _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
+  _class_http_response = mrb_define_class_under(mrb, _class_http, "Response", mrb->object_class);
   mrb_define_method(mrb, _class_http_response, "initialize", mrb_http_object_initialize, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "status_code", mrb_http_object_status_code_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "message", mrb_http_object_message_get, ARGS_NONE());
@@ -654,9 +654,9 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_response, "method", mrb_http_object_method_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body", mrb_http_object_body_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, ARGS_REQ(1));
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
 
-  struct RClass *_class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
+  _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
   mrb_define_method(mrb, _class_http_url, "schema", mrb_http_object_schema_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_url, "host", mrb_http_object_host_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_url, "port", mrb_http_object_port_get, ARGS_NONE());
@@ -666,7 +666,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   //mrb_define_method(mrb, _class_http_url, "to_url", mrb_http_url_to_url, ARGS_NONE());
   mrb_define_class_method(mrb, _class_http_url, "encode", mrb_http_url_encode, ARGS_REQ(1));
   mrb_define_class_method(mrb, _class_http_url, "decode", mrb_http_url_decode, ARGS_REQ(1));
-  ARENA_RESTORE;
+  mrb_gc_arena_restore(mrb, ai);
 }
 
 void
