@@ -635,7 +635,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_request, "headers", mrb_http_object_headers_get, ARGS_NONE());
   //mrb_define_method(mrb, _class_http_request, "headers[]=", mrb_http_object_headers_set_item, ARGS_REQ(2));
   mrb_define_method(mrb, _class_http_request, "method", mrb_http_object_method_get, ARGS_NONE());
-  mrb_define_method(mrb, _class_http_request, "method=", mrb_http_object_method_set, ARGS_NONE());
+  mrb_define_method(mrb, _class_http_request, "method=", mrb_http_object_method_set, ARGS_REQ(1));
   mrb_define_method(mrb, _class_http_request, "body", mrb_http_object_body_get, ARGS_NONE());
   mrb_define_method(mrb, _class_http_request, "body=", mrb_http_object_body_set, ARGS_REQ(1));
   mrb_gc_arena_restore(mrb, ai);
