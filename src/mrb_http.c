@@ -7,7 +7,7 @@
 #include <mruby/class.h>
 #include <mruby/variable.h>
 #include <http_parser.h>
-#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MAX_HEADER_NAME_LEN 1024
