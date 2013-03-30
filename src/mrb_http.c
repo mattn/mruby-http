@@ -320,7 +320,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
   mrb_value c;
   mrb_value arg_data;
   struct http_parser_url handle = {0};
-  struct RClass* _class_http_url;
+  struct RClass* _class_http, *_class_http_url;
 
   mrb_get_args(mrb, "S", &arg_data);
 
@@ -328,7 +328,9 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid URL");
   }
 
-  _class_http_url = mrb_class_get(mrb, "HTTP");
+  _class_http = mrb_class_get(mrb, "HTTP");
+  _class_http_url = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "URL")));
+
   c = mrb_class_new_instance(mrb, 0, NULL, _class_http_url);
 
   if (handle.field_set & (1<<UF_SCHEMA)) {
