@@ -229,10 +229,10 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   _class_http = mrb_class_get(mrb, "HTTP");
   if (type == HTTP_REQUEST) {
     clazz = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "Request")));
-    context->instance = mrb_class_new_instance(mrb, 0, NULL, clazz);
+    context->instance = mrb_obj_new(mrb, clazz, 0, NULL);
   } else {
     clazz = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "Response")));
-    context->instance = mrb_class_new_instance(mrb, 0, NULL, clazz);
+    context->instance = mrb_obj_new(mrb, clazz, 0, NULL);
   }
   context->was_header_value = TRUE;
 
@@ -331,7 +331,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
   _class_http = mrb_class_get(mrb, "HTTP");
   _class_http_url = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern(mrb, "URL")));
 
-  c = mrb_class_new_instance(mrb, 0, NULL, _class_http_url);
+  c = mrb_obj_new(mrb, _class_http_url, 0, NULL);
 
   if (handle.field_set & (1<<UF_SCHEMA)) {
     OBJECT_SET(mrb, c, "schema", mrb_str_substr(mrb, arg_data, handle.field_data[UF_SCHEMA].off, handle.field_data[UF_SCHEMA].len));
