@@ -226,7 +226,7 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   }
   context->parser.data = context;
 
-  _class_http = mrb_class_get(mrb, "HTTP");
+  _class_http = mrb_module_get(mrb, "HTTP");
   if (type == HTTP_REQUEST) {
     clazz = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "Request")));
     context->instance = mrb_obj_new(mrb, clazz, 0, NULL);
@@ -328,7 +328,7 @@ mrb_http_parser_parse_url(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid URL");
   }
 
-  _class_http = mrb_class_get(mrb, "HTTP");
+  _class_http = mrb_module_get(mrb, "HTTP");
   _class_http_url = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "URL")));
 
   c = mrb_obj_new(mrb, _class_http_url, 0, NULL);
