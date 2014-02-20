@@ -589,7 +589,7 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
   len = RSTRING_LEN(arg);
   buf = malloc(len + 1);
   pbuf = buf;
-  while (*pstr && pstr - str < len) {
+  while (pstr - str < len) {
     if (*pstr == '%' && pstr - str + 2 < len) {
       int newc  = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
       if (newc > 255)
