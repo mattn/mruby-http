@@ -549,14 +549,16 @@ mrb_http_url_encode(mrb_state *mrb, mrb_value self) {
   mrb_value arg;
   char* str;
   char *pstr, *buf, *pbuf;
+  size_t len;
 
   mrb_get_args(mrb, "S", &arg);
   str = RSTRING_PTR(arg);
+  len = RSTRING_LEN(arg);
 
   pstr = str;
   buf = malloc(strlen(str) * 3 + 1);
   pbuf = buf;
-  while (*pstr) {
+  while (pstr - str < len) {
     char c = *pstr;
     if ((('a' <= c && c <= 'z') ||
          ('A' <= c && c <= 'Z') ||
@@ -584,9 +586,9 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
 
   mrb_get_args(mrb, "S", &arg);
   str = RSTRING_PTR(arg);
+  len = RSTRING_LEN(arg);
 
   pstr = str;
-  len = RSTRING_LEN(arg);
   buf = malloc(len + 1);
   pbuf = buf;
   while (pstr - str < len) {
