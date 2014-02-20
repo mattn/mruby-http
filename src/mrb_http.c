@@ -578,14 +578,16 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
   mrb_value arg;
   char* str;
   char *pstr, *buf, *pbuf;
+  size_t len;
 
   mrb_get_args(mrb, "S", &arg);
   str = RSTRING_PTR(arg);
 
   pstr = str;
-  buf = malloc(RSTRING_LEN(arg) + 1);
+  len = RSTRING_LEN(arg);
+  buf = malloc(len + 1);
   pbuf = buf;
-  while (*pstr) {
+  while (*pstr && pstr - str < len) {
     if (*pstr == '%') {
       if (pstr[1] && pstr[2]) {
         *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
