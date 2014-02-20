@@ -530,10 +530,12 @@ mrb_http_object_body_set(mrb_state *mrb, mrb_value self)
  * url
  *********************************************************/
 
-static char
-from_hex(char ch) {
-  return ('0' <= ch && ch <= '9') ? (ch - '0') :
-    ((('A' <= ch && ch <= 'Z') ? (ch + 32) : ch) - 'a' + 10);
+static int
+from_hex(char c) {
+  if (c >= '0' && c <= '9') return (c - '0');
+  if (c >= 'a' && c<= 'f') return (c - 'a' + 10);
+  if (c >= 'A' && c<= 'F') return (c - 'A' + 10);
+  return 256;
 }
 
 static char
@@ -590,9 +592,15 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
   while (*pstr && pstr - str < len) {
     if (*pstr == '%') {
       if (pstr[1] && pstr[2]) {
-        *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-        pstr += 2;
-      }
+        int newc  = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
+        if (newc > 255)
+          *pbuf++ = '%';
+        else {
+          *pbuf++ = newc;
+          pstr += 2;
+        }
+      } else
+        *pbuf++ = '%';
     } else if (*pstr == '+') { 
       *pbuf++ = ' ';
     } else {
