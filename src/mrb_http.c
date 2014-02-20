@@ -590,17 +590,14 @@ mrb_http_url_decode(mrb_state *mrb, mrb_value self) {
   buf = malloc(len + 1);
   pbuf = buf;
   while (*pstr && pstr - str < len) {
-    if (*pstr == '%') {
-      if (pstr[1] && pstr[2]) {
-        int newc  = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-        if (newc > 255)
-          *pbuf++ = '%';
-        else {
-          *pbuf++ = newc;
-          pstr += 2;
-        }
-      } else
+    if (*pstr == '%' && pstr - str + 2 < len) {
+      int newc  = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
+      if (newc > 255)
         *pbuf++ = '%';
+      else {
+        *pbuf++ = newc;
+        pstr += 2;
+      }
     } else if (*pstr == '+') { 
       *pbuf++ = ' ';
     } else {
