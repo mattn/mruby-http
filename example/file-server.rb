@@ -50,7 +50,7 @@ s.listen(1024) do |x|
         if size >= 0
           c.write("HTTP/1.0 500 Internal Server Error\r\n\r\nInternal Server Error")
         else
-          c.write("HTTP/1.0 404 Not Found\r\n\r\nInternal Server Error")
+          c.write("HTTP/1.0 404 Not Found\r\n\r\nNot Found")
         end
       end
       keep_alive = false
