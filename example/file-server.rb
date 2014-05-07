@@ -12,12 +12,17 @@ s.bind(UV::ip4_addr('127.0.0.1', 8888))
 s.listen(1024) do |x|
   return if x != 0
   c = s.accept()
+  c.data = ''
   c.read_start do |b|
     next unless b
+    c.data += b
+    i = c.data.index("\r\n\r\n")
+    next if i == nil || i < 0
     r = h.parse_request(b)
     keep_alive = r.headers.has_key?('Connection') && r.headers['Connection'] == 'Keep-Alive'
-    file = r.path + (r.path[-1] == '/' ? 'index.html' : '')
-	size = -1
+	path = r.path || '/'
+    file = path + (path[-1] == '/' ? 'index.html' : '')
+    size = -1
     begin
       cc = keep_alive ? "keep-alive" : "close"
       size = UV::FS::stat("public/#{file}").size
@@ -36,7 +41,7 @@ s.listen(1024) do |x|
           end
           nr += read.size
         end
-	  rescue
+      rescue
       end
       f.close
     rescue
