@@ -46,12 +46,12 @@ s.listen(1024) do |x|
       end
       f.close
     rescue
-      if nw == 0
+      if c && nw == 0
         if size >= 0
-          c.write("HTTP/1.0 500 Internal Server Error\r\n\r\nInternal Server Error") if c
+          c.write("HTTP/1.0 500 Internal Server Error\r\n\r\nInternal Server Error")
         else
-          c.write("HTTP/1.0 404 Not Found\r\n\r\nInternal Server Error") if c
-        end if c
+          c.write("HTTP/1.0 404 Not Found\r\n\r\nInternal Server Error")
+        end
       end
       keep_alive = false
     end
