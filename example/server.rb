@@ -5,17 +5,16 @@ s.listen(1024) do |x|
   return if x != 0
   c = s.accept()
   c.read_start do |b|
-    if b
-      r = h.parse_request(b)
-      body = "hello #{r.path}"
-      if !r.headers.has_key?('Connection') || r.headers['Connection'] != 'Keep-Alive'
-        c.write("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: #{body.size}\r\n\r\n#{body}") do |x|
-          c.close() if c
-          c = nil
-        end
-      else
-        c.write("HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nContent-Length: #{body.size}\r\n\r\n#{body}")
+    next unless b
+    r = h.parse_request(b)
+    body = "hello #{r.path}"
+    if !r.headers.has_key?('Connection') || r.headers['Connection'] != 'Keep-Alive'
+      c.write("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: #{body.size}\r\n\r\n#{body}") do |x|
+        c.close() if c
+        c = nil
       end
+    else
+      c.write("HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nContent-Length: #{body.size}\r\n\r\n#{body}")
     end
   end
 end
