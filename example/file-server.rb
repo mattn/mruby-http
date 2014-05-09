@@ -6,6 +6,7 @@ cmap = {
  'png'  => 'image/png',
  'gif'  => 'image/gif',
 }
+cache = {}
 h = HTTP::Parser.new()
 s = UV::TCP.new()
 s.bind(UV::ip4_addr('127.0.0.1', 8888))
@@ -27,24 +28,42 @@ s.listen(1024) do |x|
     nw = 0
     begin
       cc = keep_alive ? "keep-alive" : "close"
-      size = UV::FS::stat("public/#{file}").size.to_i
+      stat = UV::FS::stat("public/#{file}")
+      size = stat.size.to_i
+      mtim = stat.mtim
       ext = file.split(".")[-1]
       ctype = cmap[ext] || 'application/octet-stream'
       header = "HTTP/1.1 200 OK\r\nConnection: #{cc}\r\nContent-Type: #{ctype}\r\nContent-Length: #{size}\r\n\r\n"
-      f = UV::FS::open("public#{file}", UV::FS::O_RDONLY, UV::FS::S_IREAD)
-      begin
-        while nw < size
-          read = f.read(8192, nw)
-          if nw == 0
-            c.write(header + read)
-          else
-            c.write(read)
-          end
-          nw += read.bytesize
+      item = cache[file]
+      body = ''
+      if item && item[:mtim] == stat.mtim
+        c.write(header + item[:body])
+        cache[file][:epoch] = Time.now.to_i
+      elsif size < 8192
+        f = UV::FS::open("public#{file}", UV::FS::O_RDONLY, UV::FS::S_IREAD)
+        begin
+          read = f.read(size, 0)
+          cache[file] = {:body => read, :mtim => mtim, :epoch => Time.now.to_i}
+          c.write(header + f.read(size, 0))
+          nw = read.bytesize
+        rescue
         end
-      rescue
+        f.close
+      else
+        f = UV::FS::open("public#{file}", UV::FS::O_RDONLY, UV::FS::S_IREAD)
+        begin
+          read = f.read(8192, 0)
+          c.write(header + read)
+          nw = read.bytesize
+          while nw < size
+            read = f.read(8192, nw)
+            c.write(read)
+            nw += read.bytesize
+          end
+        rescue
+        end
+        f.close
       end
-      f.close
     rescue
       if c && nw == 0
         if size >= 0
@@ -65,6 +84,8 @@ end
 
 t = UV::Timer.new
 t.start(3000, 3000) {|x|
+  n = Time.now.to_i
+  cache.delete_if {|k, v| v[:epoch] < n - 10}
   UV::gc()
   GC.start
 }
