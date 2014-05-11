@@ -175,9 +175,12 @@ parser_settings_on_message_complete(http_parser* parser)
   if (context->handle.field_set & (1<<UF_QUERY)) {
     OBJECT_SET(mrb, c, "query", mrb_str_substr(mrb, OBJECT_GET(mrb, c, "buf"), context->handle.field_data[UF_QUERY].off, context->handle.field_data[UF_QUERY].len));
   }
-  OBJECT_SET(mrb, c, "method", mrb_str_new_cstr(mrb, http_method_str(context->parser.method)));
-  OBJECT_SET(mrb, c, "status_code", mrb_fixnum_value(context->parser.status_code));
-  OBJECT_SET(mrb, c, "content_length", mrb_fixnum_value(context->parser.content_length));
+  if (context->parser.method)
+    OBJECT_SET(mrb, c, "method", mrb_str_new_cstr(mrb, http_method_str(context->parser.method)));
+  if (context->parser.status_code)
+    OBJECT_SET(mrb, c, "status_code", mrb_fixnum_value(context->parser.status_code));
+  if (context->parser.content_length)
+    OBJECT_SET(mrb, c, "content_length", mrb_fixnum_value(context->parser.content_length));
   OBJECT_REMOVE(mrb, c, "last_header_field");
   OBJECT_REMOVE(mrb, c, "last_header_value");
   OBJECT_REMOVE(mrb, c, "buf");
