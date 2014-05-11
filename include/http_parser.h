@@ -24,12 +24,15 @@
 extern "C" {
 #endif
 
+/* Also update SONAME in the Makefile whenever you change these. */
 #define HTTP_PARSER_VERSION_MAJOR 2
-#define HTTP_PARSER_VERSION_MINOR 0
+#define HTTP_PARSER_VERSION_MINOR 3
+#define HTTP_PARSER_VERSION_PATCH 0
 
 #include <sys/types.h>
 #if defined(_WIN32) && !defined(__MINGW32__) && (!defined(_MSC_VER) || _MSC_VER<1600)
 #include <BaseTsd.h>
+#include <stddef.h>
 typedef __int8 int8_t;
 typedef unsigned __int8 uint8_t;
 typedef __int16 int16_t;
@@ -38,8 +41,6 @@ typedef __int32 int32_t;
 typedef unsigned __int32 uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
-typedef SIZE_T size_t;
-typedef SSIZE_T ssize_t;
 #else
 #include <stdint.h>
 #endif
@@ -51,9 +52,16 @@ typedef SSIZE_T ssize_t;
 # define HTTP_PARSER_STRICT 1
 #endif
 
-/* Maximium header size allowed */
-#define HTTP_MAX_HEADER_SIZE (80*1024)
-
+/* Maximium header size allowed. If the macro is not defined
+ * before including this header then the default is used. To
+ * change the maximum header size, define the macro in the build
+ * environment (e.g. -DHTTP_MAX_HEADER_SIZE=<value>). To remove
+ * the effective limit on the size of the header, define the macro
+ * to a very large number (e.g. -DHTTP_MAX_HEADER_SIZE=0x7fffffff)
+ */
+#ifndef HTTP_MAX_HEADER_SIZE
+# define HTTP_MAX_HEADER_SIZE (80*1024)
+#endif
 
 typedef struct http_parser http_parser;
 typedef struct http_parser_settings http_parser_settings;
@@ -148,6 +156,7 @@ enum flags
   XX(CB_headers_complete, "the on_headers_complete callback failed") \
   XX(CB_body, "the on_body callback failed")                         \
   XX(CB_message_complete, "the on_message_complete callback failed") \
+  XX(CB_status, "the on_status callback failed")                     \
                                                                      \
   /* Parsing-related errors */                                       \
   XX(INVALID_EOF_STATE, "stream ended at an unexpected time")        \
@@ -191,11 +200,11 @@ enum http_errno {
 
 struct http_parser {
   /** PRIVATE **/
-  unsigned char type : 2;     /* enum http_parser_type */
-  unsigned char flags : 6;    /* F_* values from 'flags' enum; semi-public */
-  unsigned char state;        /* enum state from http_parser.c */
-  unsigned char header_state; /* enum header_state from http_parser.c */
-  unsigned char index;        /* index into current matcher */
+  unsigned int type : 2;         /* enum http_parser_type */
+  unsigned int flags : 6;        /* F_* values from 'flags' enum; semi-public */
+  unsigned int state : 8;        /* enum state from http_parser.c */
+  unsigned int header_state : 8; /* enum header_state from http_parser.c */
+  unsigned int index : 8;        /* index into current matcher */
 
   uint32_t nread;          /* # bytes read in various scenarios */
   uint64_t content_length; /* # bytes in body (0 if no Content-Length header) */
@@ -203,16 +212,16 @@ struct http_parser {
   /** READ-ONLY **/
   unsigned short http_major;
   unsigned short http_minor;
-  unsigned short status_code; /* responses only */
-  unsigned char method;       /* requests only */
-  unsigned char http_errno : 7;
+  unsigned int status_code : 16; /* responses only */
+  unsigned int method : 8;       /* requests only */
+  unsigned int http_errno : 7;
 
   /* 1 = Upgrade header was present and the parser has exited because of that.
    * 0 = No upgrade header present.
    * Should be checked when http_parser_execute() returns in addition to
    * error checking.
    */
-  unsigned char upgrade : 1;
+  unsigned int upgrade : 1;
 
   /** PUBLIC **/
   void *data; /* A pointer to get hook to the "connection" or "socket" object */
@@ -222,6 +231,7 @@ struct http_parser {
 struct http_parser_settings {
   http_cb      on_message_begin;
   http_data_cb on_url;
+  http_data_cb on_status;
   http_data_cb on_header_field;
   http_data_cb on_header_value;
   http_cb      on_headers_complete;
@@ -259,6 +269,18 @@ struct http_parser_url {
   } field_data[UF_MAX];
 };
 
+
+/* Returns the library version. Bits 16-23 contain the major version number,
+ * bits 8-15 the minor version number and bits 0-7 the patch level.
+ * Usage example:
+ *
+ *   unsigned long version = http_parser_version();
+ *   unsigned major = (version >> 16) & 255;
+ *   unsigned minor = (version >> 8) & 255;
+ *   unsigned patch = version & 255;
+ *   printf("http_parser v%u.%u.%u\n", major, minor, version);
+ */
+unsigned long http_parser_version(void);
 
 void http_parser_init(http_parser *parser, enum http_parser_type type);
 
