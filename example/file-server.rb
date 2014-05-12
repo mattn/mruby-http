@@ -43,7 +43,7 @@ s.listen(1024) do |x|
         f = UV::FS::open("public#{file}", UV::FS::O_RDONLY, UV::FS::S_IREAD)
         begin
           read = f.read(size, 0)
-          cache[file] = {:body => read, :mtim => mtim, :epoch => Time.now.to_i}
+          cache[file] = {:body => read.clone, :mtim => mtim, :epoch => Time.now.to_i}
           c.write(header + f.read(size, 0))
           nw = read.bytesize
         rescue
