@@ -543,7 +543,7 @@ from_hex(char c) {
 
 static char
 to_hex(char code) {
-  static char hex[] = "0123456789abcdef";
+  static char hex[] = "0123456789ABCDEF";
   return hex[code & 15];
 }
 
