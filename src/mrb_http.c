@@ -122,6 +122,8 @@ parser_settings_on_headers_complete(http_parser* parser)
     mrb_hash_set(mrb, OBJECT_GET(mrb, context->instance, "headers"),
         OBJECT_GET(mrb, context->instance, "last_header_field"),
         OBJECT_GET(mrb, context->instance, "last_header_value"));
+    OBJECT_REMOVE(mrb, context->instance, "last_header_field");
+    OBJECT_REMOVE(mrb, context->instance, "last_header_value");
   }
   mrb_gc_arena_restore(mrb, ai);
   return 0;
@@ -266,6 +268,12 @@ RETRY:
   done = http_parser_execute(&context->parser, &context->settings, data, len);
   if (done < len) {
     OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, data + done, len - done));
+  } else
+    http_parser_execute(&context->parser, &context->settings, NULL, 0);
+
+  int eno = HTTP_PARSER_ERRNO(&context->parser);
+  if (eno != HPE_OK) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, http_errno_name(eno));
   }
 
   if (!mrb_nil_p(b)) {
@@ -373,7 +381,6 @@ mrb_http_object_initialize(mrb_state *mrb, mrb_value self)
 {
   OBJECT_SET(mrb, self, "headers", mrb_hash_new(mrb));
   OBJECT_SET(mrb, self, "body", mrb_nil_value());
-  OBJECT_SET(mrb, self, "method", mrb_str_new_cstr(mrb, "GET"));
   return self;
 }
 
