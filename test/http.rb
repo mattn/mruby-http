@@ -10,8 +10,8 @@ EOF
   h = HTTP::Parser.new
   req = h.parse_request(q)
   
-  assert_equal 'localhost', req['Host']
-  assert_equal 'mruby', req['mruby']
-  assert_equal "foo\tbar", req['My-Header']
+  assert_equal 'localhost', req.headers['Host']
+  assert_equal 'mruby', req.headers['mruby']
+  assert_equal "foo\tbar", req.headers['My-Header']
 end
 
