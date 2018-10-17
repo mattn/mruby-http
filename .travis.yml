@@ -1,11 +1,24 @@
+sudo: required
+compiler:
+  - gcc
+  - clang
+env:
+  matrix:
+    - MRUBY_VERSION=master
+    - MRUBY_VERSION=1.4.0
+before_script:
+  # Add an IPv6 config - see the corresponding Travis issue
+  # https://github.com/travis-ci/travis-ci/issues/8361
+  - if [ "${TRAVIS_OS_NAME}" == "linux" ]; then
+      sudo sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6';
+    fi
 script:
   - export MRUBY_CONFIG="$TRAVIS_BUILD_DIR/.travis_config.rb"
-  - git clone --depth 1 "https://github.com/mruby/mruby.git"
-  - cd mruby
-  - ./minirake all test
-  - cd "$TRAVIS_BUILD_DIR"
-  - curl "http://forum.mruby.org/download/source/mruby-1.2.0.tar.gz" > mruby-1.2.0.tar.gz
-  - tar xf mruby-1.2.0.tar.gz
-  - cd mruby
-  - ./minirake all test
-
+  - 'if [ "$MRUBY_VERSION" = "master" ] ; then
+      git clone --depth 1 "https://github.com/mruby/mruby.git" mruby-$MRUBY_VERSION;
+    else
+      curl -L "https://github.com/mruby/mruby/archive/$MRUBY_VERSION.tar.gz" > mruby-$MRUBY_VERSION.tar.gz;
+      tar xf mruby-$MRUBY_VERSION.tar.gz;
+    fi'
+  - cd mruby-$MRUBY_VERSION
+  - ./minirake -v all test
