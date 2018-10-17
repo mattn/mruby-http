@@ -268,12 +268,11 @@ RETRY:
   done = http_parser_execute(&context->parser, &context->settings, data, len);
   if (done < len) {
     OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, data + done, len - done));
-  } else
+    int eno = HTTP_PARSER_ERRNO(&context->parser);
+    if (eno != HPE_OK) {
+      mrb_raise(mrb, E_ARGUMENT_ERROR, http_errno_name(eno));
+    }
     http_parser_execute(&context->parser, &context->settings, NULL, 0);
-
-  int eno = HTTP_PARSER_ERRNO(&context->parser);
-  if (eno != HPE_OK) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, http_errno_name(eno));
   }
 
   if (!mrb_nil_p(b)) {
