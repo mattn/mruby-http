@@ -82,11 +82,8 @@ parser_settings_on_header_field(http_parser* parser, const char* at, size_t len)
 
   int ai = mrb_gc_arena_save(mrb);
   if (context->was_header_value) {
-    if (!mrb_nil_p(OBJECT_GET(mrb, context->instance, "last_header_field"))) {
-      mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_field"), OBJECT_GET(mrb, context->instance, "last_header_value"));
-      OBJECT_SET(mrb, context->instance, "last_header_value", mrb_nil_value());
-    }
     OBJECT_SET(mrb, context->instance, "last_header_field", mrb_str_new(mrb, at, len));
+    puts("foo");
     context->was_header_value = FALSE;
   } else {
     mrb_str_concat(mrb, OBJECT_GET(mrb, context->instance, "last_header_field"), mrb_str_new(mrb, at, len));
