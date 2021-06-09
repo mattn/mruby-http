@@ -221,6 +221,7 @@ parser_settings_on_message_complete(http_parser* parser)
 
   if (!mrb_nil_p(OBJECT_GET(mrb, c, "chunked_content_length"))) {
     OBJECT_SET(mrb, c, "content_length", OBJECT_GET(mrb, c, "chunked_content_length"));
+    OBJECT_SET(mrb, c, "chunked?", mrb_bool_value(TRUE));
     if (!mrb_nil_p(OBJECT_GET(mrb, c, "chunked_body"))) {
       OBJECT_SET(mrb, c, "body", OBJECT_GET(mrb, c, "chunked_body"));
     }
@@ -427,6 +428,7 @@ mrb_http_object_initialize(mrb_state *mrb, mrb_value self)
 {
   OBJECT_SET(mrb, self, "headers", mrb_hash_new(mrb));
   OBJECT_SET(mrb, self, "body", mrb_nil_value());
+  OBJECT_SET(mrb, self, "chunked?", mrb_bool_value(FALSE));
   return self;
 }
 
@@ -574,6 +576,12 @@ mrb_http_object_body_set(mrb_state *mrb, mrb_value self)
   return mrb_nil_value();
 }
 
+static mrb_value
+mrb_http_object_chunked_get(mrb_state *mrb, mrb_value self)
+{
+  return OBJECT_GET(mrb, self, "chunked?");
+}
+
 /*********************************************************
  * response
  *********************************************************/
@@ -717,6 +725,7 @@ mrb_mruby_http_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, _class_http_response, "method", mrb_http_object_method_get, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body", mrb_http_object_body_get, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_http_response, "body=", mrb_http_object_body_set, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_http_response, "chunked?", mrb_http_object_chunked_get, MRB_ARGS_NONE());
   mrb_gc_arena_restore(mrb, ai);
 
   _class_http_url = mrb_define_class_under(mrb, _class_http, "URL", mrb->object_class);
