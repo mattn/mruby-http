@@ -134,10 +134,46 @@ parser_settings_on_body(http_parser *parser, const char *p, size_t len)
 {
   mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
   mrb_state* mrb = context->mrb;
+  mrb_value c = context->instance;
 
   int ai = mrb_gc_arena_save(mrb);
-  OBJECT_SET(mrb, context->instance, "body", mrb_str_new(mrb, p, len));
+  OBJECT_SET(mrb, c, "body", mrb_str_new(mrb, p, len));
+
+  if (mrb_nil_p(OBJECT_GET(mrb, c, "chunked_body"))) {
+    OBJECT_SET(mrb, c, "chunked_body", OBJECT_GET(mrb, c, "body"));
+  }
+  else {
+    OBJECT_SET(mrb, c, "chunked_body", mrb_str_plus(mrb, OBJECT_GET(mrb, c, "chunked_body"), OBJECT_GET(mrb, c, "body")));
+  }
   mrb_gc_arena_restore(mrb, ai);
+  return 0;
+}
+
+static int
+parser_settings_on_chunk_header(http_parser *parser)
+{
+  mrb_http_parser_context *context = (mrb_http_parser_context*) parser->data;
+  mrb_state* mrb = context->mrb;
+  mrb_value c = context->instance;
+
+  if (parser->content_length) {
+    int ai = mrb_gc_arena_save(mrb);
+    if (mrb_nil_p(OBJECT_GET(mrb, c, "chunked_content_length"))) {
+      OBJECT_SET(mrb, c, "chunked_content_length", mrb_fixnum_value(parser->content_length));
+    }
+    else {
+      OBJECT_SET(mrb, c, "chunked_content_length", mrb_fixnum_value( \
+        mrb_fixnum(OBJECT_GET(mrb, c, "chunked_content_length")) + parser->content_length \
+      ));
+    }
+    mrb_gc_arena_restore(mrb, ai);
+  }
+  return 0;
+}
+
+static int
+parser_settings_on_chunk_complete(http_parser* parser)
+{
   return 0;
 }
 
@@ -183,6 +219,15 @@ parser_settings_on_message_complete(http_parser* parser)
   OBJECT_REMOVE(mrb, c, "last_header_value");
   OBJECT_REMOVE(mrb, c, "buf");
 
+  if (!mrb_nil_p(OBJECT_GET(mrb, c, "chunked_content_length"))) {
+    OBJECT_SET(mrb, c, "content_length", OBJECT_GET(mrb, c, "chunked_content_length"));
+    if (!mrb_nil_p(OBJECT_GET(mrb, c, "chunked_body"))) {
+      OBJECT_SET(mrb, c, "body", OBJECT_GET(mrb, c, "chunked_body"));
+    }
+  }
+  else {
+    mrb_gc_protect(mrb, OBJECT_GET(mrb, c, "body"));
+  }
   return 0;
 }
 
@@ -245,6 +290,8 @@ _http_parser_parse(mrb_state *mrb, mrb_value self, int type)
   context->settings.on_header_value = parser_settings_on_header_value;
   context->settings.on_headers_complete = parser_settings_on_headers_complete;
   context->settings.on_body = parser_settings_on_body;
+  context->settings.on_chunk_header = parser_settings_on_chunk_header;
+  context->settings.on_chunk_complete = parser_settings_on_chunk_complete;
   context->settings.on_message_complete = parser_settings_on_message_complete;
 
   data = RSTRING_PTR(arg_data);
