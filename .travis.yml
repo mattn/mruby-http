@@ -21,4 +21,8 @@ script:
       tar xf mruby-$MRUBY_VERSION.tar.gz;
     fi'
   - cd mruby-$MRUBY_VERSION
-  - ./minirake -v all test
+  - 'if [ "$MRUBY_VERSION" = "master" ] ; then
+      rake -m test:build && rake test:run
+    else
+      ./minirake -v all test
+    fi'
